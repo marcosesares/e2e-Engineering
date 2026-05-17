@@ -1,0 +1,321 @@
+# Specify CLI — Command Contract
+#
+# Purpose: Machine-readable contract for Specify CLI commands.
+# This is NOT an HTTP API. Specify CLI is CLI-only (Typer + click).
+# Each section describes command signatures, inputs, outputs, and side effects.
+#
+# Format: OpenAPI 3.1 with custom x-cli-command extensions
+# Generated: 2026-05-18 (repurposed from HTTP OpenAPI spec)
+
+openapi: 3.1.0
+info:
+  title: Specify CLI Command Contract
+  description: Machine-readable contract for specify CLI commands (init, extension, preset, integration, workflow, agent, catalog). Defines input args/flags, output shapes, exit codes, and side effects.
+  version: 1.0.0
+  contact:
+    name: Specify Team
+
+# No servers section — this is CLI, not HTTP
+
+x-cli-metadata:
+  cli-framework: Typer
+  entry-point: specify_cli.main:app
+  python-version: ">=3.11"
+  package: specify-cli
+
+commands:
+  init:
+    summary: Initialize a Specify project
+    operationId: init
+    tags:
+      - Project
+    x-cli-command:
+      name: init
+      aliases: []
+      help: "Initialize a new Specify project with integration, workflows, and optional presets"
+
+    inputs:
+      args:
+        - name: project_name
+          type: string
+          required: false
+          description: "Name/path of project directory. Omit with --here."
+
+      flags:
+        - name: "--here"
+          type: boolean
+          default: false
+          description: "Use current directory instead of creating new"
+
+        - name: "--force"
+          type: boolean
+          default: false
+          description: "Skip confirmation when merging into non-empty directory"
+
+        - name: "--integration"
+          type: string
+          default: null
+          description: "AI agent ID (claude, copilot, cursor, etc.). Preferred over --ai"
+
+        - name: "--ai"
+          type: string
+          deprecated: true
+          default: null
+          description: "Deprecated. Use --integration instead."
+
+        - name: "--ai-commands-dir"
+          type: string
+          default: null
+          description: "Custom command directory for generic integration"
+
+        - name: "--ai-skills"
+          type: array[string]
+          default: []
+          description: "AI skills to register (requires --integration)"
+
+        - name: "--preset"
+          type: string
+          default: null
+          description: "Preset ID to install during init (local, bundled, catalog, or remote)"
+
+        - name: "--script"
+          type: enum[sh|ps]
+          default: null
+          description: "Script type: sh (Unix) or ps (PowerShell). Defaults to OS-appropriate."
+
+        - name: "--no-git"
+          type: boolean
+          default: false
+          description: "Skip git repository initialization"
+
+        - name: "--ignore-agent-tools"
+          type: boolean
+          default: false
+          description: "Skip CLI tool validation for selected agent"
+
+        - name: "--branch-numbering"
+          type: enum[sequential|timestamp]
+          default: sequential
+          description: "Branch numbering strategy"
+
+    outputs:
+      exit_code:
+        success: 0
+        cancelled: 0
+        error: 1
+
+      stdout:
+        - type: rich_panels
+          description: "StepTracker live progress panels (8 fps refresh)"
+
+        - type: messages
+          description: "Post-init security notice, deprecation warnings, next steps"
+
+      stderr:
+        - type: error_messages
+          description: "Errors, missing tools, git/integration setup issues"
+
+    side_effects:
+      - type: filesystem
+        path: ".specify/"
+        description: "Create .specify/ directory with constitution.md, init-options.json, workflows/, extensions/"
+
+      - type: filesystem
+        path: ".git/"
+        description: "Initialize git repository (unless --no-git)"
+
+      - type: filesystem
+        path: ".specify/init-options.json"
+        description: "Persist init choices: ai, integration, script, preset, branch_numbering, speckit_version"
+
+    confidence: 🟢 CONFIRMED
+
+  extension:
+    summary: Manage extensions
+    operationId: extension
+    tags:
+      - Extensions
+
+    x-cli-command:
+      name: extension
+      aliases: [ext]
+      help: "Install, update, list, or remove extensions"
+      subcommands:
+        - install
+        - list
+        - update
+        - remove
+
+    inputs:
+      subcommand: install | list | update | remove
+
+      flags_install:
+        - name: "--extension"
+          type: string
+          required: true
+          description: "Extension ID to install"
+
+        - name: "--from"
+          type: string
+          default: null
+          description: "Source: local path, bundled, catalog, or URL"
+
+    outputs:
+      exit_code:
+        success: 0
+        error: 1
+
+      stdout:
+        - description: "List of extensions (for 'list' subcommand)"
+        - description: "Installation progress (for 'install')"
+
+      stderr:
+        - description: "Errors, registry conflicts, validation failures"
+
+    side_effects:
+      - type: filesystem
+        path: ".specify/extensions.yml"
+        description: "Update extension registry, hooks configuration"
+
+      - type: filesystem
+        path: ".specify/extensions/<ext_id>/"
+        description: "Copy extension files on install"
+
+    confidence: 🟡 PARTIAL
+
+  preset:
+    summary: Manage presets
+    operationId: preset
+    tags:
+      - Presets
+
+    x-cli-command:
+      name: preset
+      aliases: []
+      help: "Install, list, or remove presets"
+      subcommands:
+        - install
+        - list
+        - remove
+
+    inputs:
+      subcommand: install | list | remove
+
+      flags_install:
+        - name: "--preset"
+          type: string
+          required: true
+          description: "Preset ID to install. Fallback chain: local → bundled → catalog (with remote download)"
+
+        - name: "--force"
+          type: boolean
+          default: false
+          description: "Skip confirmation on conflicts"
+
+    outputs:
+      exit_code:
+        success: 0
+        error: 1
+
+      stdout:
+        - description: "Preset list or installation status"
+
+      stderr:
+        - description: "Errors, conflicts, missing catalog entries"
+
+    side_effects:
+      - type: filesystem
+        path: ".specify/presets/<preset_id>/"
+        description: "Install preset files"
+
+      - type: filesystem
+        path: ".specify/presets.yml"
+        description: "Update preset registry"
+
+    confidence: 🟢 CONFIRMED
+
+  workflow:
+    summary: Manage workflows
+    operationId: workflow
+    tags:
+      - Workflows
+
+    x-cli-command:
+      name: workflow
+      aliases: [wf]
+      help: "List or run workflows"
+      subcommands:
+        - run
+        - list
+
+    inputs:
+      flags_run:
+        - name: "--workflow"
+          type: string
+          required: true
+          description: "Workflow ID to run"
+
+        - name: "--step"
+          type: string
+          default: null
+          description: "Start from specific step (resume)"
+
+    outputs:
+      exit_code:
+        success: 0
+        user_cancelled: 130
+        error: 1
+
+      stdout:
+        - description: "Workflow execution output, step results"
+        - description: "Prompt responses and command outputs"
+
+    side_effects:
+      - type: filesystem
+        path: ".specify/workflows/<workflow_id>/state.json"
+        description: "Persist workflow execution state"
+
+    confidence: 🟡 PARTIAL
+
+  integration:
+    summary: Manage integrations (AI agents, tools)
+    operationId: integration
+    tags:
+      - Integrations
+
+    x-cli-command:
+      name: integration
+      aliases: [integ]
+      help: "Manage integrations (Claude, Copilot, Goose, etc.)"
+      subcommands:
+        - install
+        - list
+        - activate
+
+    inputs:
+      flags:
+        - name: "--integration"
+          type: string
+          required: true
+          description: "Integration ID (claude, copilot, goose, etc.)"
+
+    outputs:
+      exit_code:
+        success: 0
+        error: 1
+
+      stdout:
+        - description: "Integration list or activation status"
+
+    side_effects:
+      - type: filesystem
+        path: ".specify/integrations.yml"
+        description: "Register and configure integration"
+
+    confidence: 🟡 PARTIAL
+
+x-notes:
+  - "This contract was repurposed from HTTP OpenAPI spec. Specify CLI is CLI-only."
+  - "Each command defined here is invoked via CLI, not HTTP endpoints."
+  - "Side effects are filesystem mutations (config files, registries, installed components)."
+  - "For subcommand details, see individual unit specs (extension/requirements.md, preset/design.md, etc.)"
