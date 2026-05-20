@@ -1,0 +1,292 @@
+openapi: 3.1.0
+info:
+  title: Ralph — Autonomous Agent Loop Framework
+  version: "1.0.0"
+  description: |
+    Framework for autonomous AI agent loops that implement features from Product Requirements Documents (PRDs).
+    Ralph is a command-line tool and SPA that orchestrates fresh AI agent instances (Amp or Claude) to implement user stories iteratively.
+  contact:
+    name: Ralph Framework
+    url: https://github.com/snarktank/ralph
+
+servers:
+  - url: "https://github.com/snarktank/ralph"
+    description: GitHub repository
+  - url: "https://[user].github.io/ralph"
+    description: Interactive flowchart visualization (SPA deployed to GitHub Pages)
+
+paths:
+  /.github/workflows/deploy.yml:
+    description: "CI/CD workflow endpoint (GitHub Actions)"
+    get:
+      summary: "Build and deploy flowchart to GitHub Pages"
+      operationId: deploySPA
+      tags:
+        - CI/CD
+      responses:
+        "200":
+          description: "Build and deployment successful"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  buildTime:
+                    type: number
+                    description: "Build duration in seconds"
+                    example: 45
+                  deployURL:
+                    type: string
+                    example: "https://user.github.io/ralph/"
+        "400":
+          description: "Build failed (TypeScript compilation or Vite bundling error)"
+        "500":
+          description: "Deployment failed (GitHub Pages upload error)"
+
+  /ralph.sh:
+    description: "Main CLI entry point for agent loop orchestration"
+    post:
+      summary: "Execute autonomous agent loop"
+      operationId: executeLoop
+      tags:
+        - Agent Loop
+      parameters:
+        - name: tool
+          in: query
+          required: false
+          description: "AI backend: amp (default) or claude"
+          schema:
+            type: string
+            enum: [amp, claude]
+            default: "amp"
+        - name: max-iterations
+          in: query
+          required: false
+          description: "Maximum iterations before stopping loop"
+          schema:
+            type: integer
+            default: 10
+        - name: branch
+          in: query
+          required: false
+          description: "Feature branch name (default from prd.json.branchName)"
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PRD"
+      responses:
+        "200":
+          description: "Loop completed successfully"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "complete"
+                  iterationsCompleted:
+                    type: integer
+                    example: 5
+                  storiesCompleted:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: "US-001"
+                        title:
+                          type: string
+                          example: "Add dark mode"
+                        status:
+                          type: string
+                          enum: [completed, failed]
+                  progressLog:
+                    type: string
+                    description: "Appended progress.txt content"
+        "400":
+          description: "Invalid PRD structure or configuration"
+        "500":
+          description: "Agent execution error or quality check failure"
+
+  /skills/prd/:
+    description: "PRD Generator skill endpoint"
+    post:
+      summary: "Generate PRD from feature description"
+      operationId: generatePRD
+      tags:
+        - Skills
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                featureDescription:
+                  type: string
+                  example: "Add dark mode toggle to settings panel"
+                clarifyingAnswers:
+                  type: object
+                  example:
+                    "1": "A"
+                    "2": "C"
+                    "3": "B"
+      responses:
+        "201":
+          description: "PRD generated successfully"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filePath:
+                    type: string
+                    example: "tasks/prd-dark-mode.md"
+                  content:
+                    type: string
+                    description: "Generated markdown PRD"
+        "400":
+          description: "Invalid feature description or answers"
+
+  /skills/ralph/:
+    description: "Ralph PRD Converter skill endpoint"
+    post:
+      summary: "Convert markdown PRD to prd.json"
+      operationId: convertPRD
+      tags:
+        - Skills
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prdFilePath:
+                  type: string
+                  example: "tasks/prd-dark-mode.md"
+      responses:
+        "201":
+          description: "PRD converted successfully"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PRD"
+        "400":
+          description: "Invalid PRD markdown or validation errors"
+
+components:
+  schemas:
+    PRD:
+      type: object
+      required:
+        - project
+        - branchName
+        - description
+        - userStories
+      properties:
+        project:
+          type: string
+          example: "ralph"
+          description: "Project name"
+        branchName:
+          type: string
+          example: "ralph/dark-mode"
+          description: "Feature branch name (kebab-case)"
+        description:
+          type: string
+          example: "Add dark mode toggle to the settings panel for improved UX"
+          description: "Feature overview"
+        userStories:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserStory"
+
+    UserStory:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - acceptanceCriteria
+        - priority
+        - passes
+      properties:
+        id:
+          type: string
+          example: "US-001"
+          description: "Unique story identifier (US-NNN)"
+        title:
+          type: string
+          example: "Add dark mode toggle"
+        description:
+          type: string
+          example: "As a user, I want to toggle dark mode so that I can reduce eye strain"
+        acceptanceCriteria:
+          type: array
+          items:
+            type: string
+          example:
+            - "Dark mode toggle visible in settings panel"
+            - "UI colors inverted when dark mode enabled"
+            - "Preference persists across sessions"
+        priority:
+          type: integer
+          enum: [1, 2, 3, 4]
+          description: "MoSCoW priority (1=Must, 2=Should, 3=Could, 4=Won't)"
+        passes:
+          type: boolean
+          example: false
+          description: "Story completion status"
+        notes:
+          type: string
+          example: "Consider accessibility for high-contrast mode"
+          nullable: true
+
+    BuildStatus:
+      type: object
+      properties:
+        workflowID:
+          type: string
+          example: "build-deploy-42"
+        status:
+          type: string
+          enum: [success, failure, in_progress]
+        buildTime:
+          type: number
+          description: "Duration in seconds"
+        artifacts:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                example: "dist"
+              size:
+                type: number
+                description: "Size in bytes"
+              deployedAt:
+                type: string
+                format: "date-time"
+
+tags:
+  - name: Agent Loop
+    description: "Autonomous agent orchestration and iteration"
+  - name: Skills
+    description: "PRD generation and conversion"
+  - name: CI/CD
+    description: "Build and deployment pipeline"
+
+# Note: Ralph does not expose a traditional REST API server.
+# This OpenAPI schema documents the CLI endpoints (ralph.sh, skills) and GitHub Actions workflow
+# as logical interface contracts for the framework.
