@@ -73,7 +73,7 @@ function requireDist(rel) {
 }
 
 function installClaude(dest, opts, written) {
-  const src = requireDist(path.join("claude-plugin", "skills", "e2e-engineering"));
+  const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "skills", "e2e-engineering"));
   copyRecursive(src, path.join(dest, ".claude", "skills", "e2e-engineering"), opts, written);
 }
 

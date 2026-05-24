@@ -33,11 +33,11 @@ If an `AGENTS.md` already exists, the installer writes `AGENTS.e2e-engineering.m
 
 **Claude Code (per-project):**
 ```powershell
-Copy-Item -Recurse "<pkg>/dist/claude-plugin/skills/e2e-engineering" "<repo>/.claude/skills/e2e-engineering"
+Copy-Item -Recurse "<pkg>/dist/marketplace/plugins/e2e-engineering/skills/e2e-engineering" "<repo>/.claude/skills/e2e-engineering"
 ```
 **Claude Code (global, all projects):**
 ```powershell
-Copy-Item -Recurse "<pkg>/dist/claude-plugin/skills/e2e-engineering" "$env:USERPROFILE/.claude/skills/e2e-engineering"
+Copy-Item -Recurse "<pkg>/dist/marketplace/plugins/e2e-engineering/skills/e2e-engineering" "$env:USERPROFILE/.claude/skills/e2e-engineering"
 ```
 Restart Claude Code → type `/e2e-engineering`.
 
@@ -46,7 +46,7 @@ Restart Claude Code → type `/e2e-engineering`.
 
 ## Claude marketplace (discoverable install)
 
-The plugin lives in `dist/claude-plugin/` with `.claude-plugin/plugin.json` + `marketplace.json` (category `workflow`). Publish that directory to a GitHub repo, then:
+`dist/marketplace/` is a standalone Claude Code marketplace repo: `.claude-plugin/marketplace.json` at its root, the plugin under `plugins/e2e-engineering/` (`.claude-plugin/plugin.json` + `skills/`). Publish the **contents of `dist/marketplace/`** to the root of a GitHub repo, then:
 
 ```
 /plugin marketplace add <owner>/<repo>
@@ -56,7 +56,7 @@ The plugin lives in `dist/claude-plugin/` with `.claude-plugin/plugin.json` + `m
 ## Publishing the npm package
 
 ```bash
-npm run build          # sync canonical skill → dist/claude-plugin/skills
+npm run build          # sync canonical skill → dist/marketplace/plugins/e2e-engineering/skills
 npm publish            # prepublishOnly re-runs build
 ```
 

@@ -1,7 +1,8 @@
 {
   "name": "e2e-engineering",
   "owner": {
-    "name": "marcoscesar-bt"
+    "name": "marcoscesar-bt",
+    "email": "marcosesares@gmail.com"
   },
   "metadata": {
     "description": "Engineering flow skills — idea to passing E2E.",
@@ -10,7 +11,7 @@
   "plugins": [
     {
       "name": "e2e-engineering",
-      "source": "./",
+      "source": "./plugins/e2e-engineering",
       "description": "Master engineering orchestrator: phase-adaptive flow, five hard gates, vertical-slice TDD loop with parallel subagents, context checkpointing. Greenfield/feature/bugfix/refactor + adopt mode.",
       "category": "workflow"
     }

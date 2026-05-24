@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Sync the canonical e2e-engineering skill into the Claude-plugin dist tree.
+// Sync the canonical e2e-engineering skill into the marketplace plugin tree.
 // Canonical source of truth: .claude/skills/e2e-engineering/
 // The AGENTS.md and Cursor variants are authored/maintained by hand in dist/
 // (they are editorial flattenings, not mechanical copies) and are left untouched.
@@ -11,7 +11,8 @@ const path = require("path");
 
 const REPO = path.resolve(__dirname, "..");
 const CANONICAL = path.join(REPO, ".claude", "skills", "e2e-engineering");
-const PLUGIN_SKILLS = path.join(REPO, "dist", "claude-plugin", "skills", "e2e-engineering");
+const PLUGIN_DIR = path.join(REPO, "dist", "marketplace", "plugins", "e2e-engineering");
+const PLUGIN_SKILLS = path.join(PLUGIN_DIR, "skills", "e2e-engineering");
 
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
@@ -37,8 +38,8 @@ function main() {
 
   // sanity: required portable artifacts present
   const required = [
-    path.join(REPO, "dist", "claude-plugin", ".claude-plugin", "plugin.json"),
-    path.join(REPO, "dist", "claude-plugin", ".claude-plugin", "marketplace.json"),
+    path.join(REPO, "dist", "marketplace", ".claude-plugin", "marketplace.json"),
+    path.join(PLUGIN_DIR, ".claude-plugin", "plugin.json"),
     path.join(REPO, "dist", "agents-md", "AGENTS.md"),
     path.join(REPO, "dist", "cursor", ".cursor", "rules", "e2e-engineering.mdc")
   ];
@@ -49,7 +50,7 @@ function main() {
   }
 
   const count = countFiles(PLUGIN_SKILLS);
-  process.stdout.write("build-dist: synced " + count + " skill file(s) → dist/claude-plugin/skills/e2e-engineering\n");
+  process.stdout.write("build-dist: synced " + count + " skill file(s) → " + path.relative(REPO, PLUGIN_SKILLS) + "\n");
 }
 
 function countFiles(dir) {
