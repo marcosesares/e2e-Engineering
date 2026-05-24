@@ -18,12 +18,13 @@ const REPO = path.resolve(__dirname, "..");
 const SRC = path.join(REPO, "dist", "marketplace");
 
 function parseArgs(argv) {
-  const a = { dest: path.resolve(REPO, "..", "e2e-engineering-marketplace"), remote: null, push: false, name: "e2e-engineering" };
+  const a = { dest: path.resolve(REPO, "..", "e2e-engineering-marketplace"), remote: null, push: false, force: false, name: "e2e-engineering" };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === "--dest") a.dest = path.resolve(argv[++i]);
     else if (x === "--remote") a.remote = argv[++i];
     else if (x === "--push") a.push = true;
+    else if (x === "--force") a.force = true;
     else if (x === "--name") a.name = argv[++i];
   }
   return a;
@@ -86,7 +87,9 @@ function main() {
     if (remotes.split(/\s+/).includes("origin")) git(["remote", "set-url", "origin", args.remote], args.dest);
     else git(["remote", "add", "origin", args.remote], args.dest);
     if (args.push) {
-      git(["push", "-u", "origin", "main"], args.dest);
+      const pushArgs = ["push", "-u", "origin", "main"];
+      if (args.force) pushArgs.push("--force");
+      git(pushArgs, args.dest);
       process.stdout.write("pushed to " + args.remote + "\n");
     } else {
       process.stdout.write("remote set. Push with: git -C \"" + args.dest + "\" push -u origin main\n");

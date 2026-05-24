@@ -1,0 +1,57 @@
+name: release
+
+# Fires on version tags (e.g. v1.0.0). Publishes the npm package and
+# syncs the standalone marketplace repo.
+#
+# Required configuration (repo Settings → Secrets and variables → Actions):
+#   secret NPM_TOKEN          npm automation token (Publish scope)
+#   secret MARKETPLACE_TOKEN  GitHub PAT with `repo` scope on the marketplace repo  (optional)
+#   variable MARKETPLACE_REPO owner/name of the marketplace repo, e.g. marcosesares/e2e-engineering-marketplace (optional)
+# If MARKETPLACE_TOKEN / MARKETPLACE_REPO are unset, the marketplace job no-ops.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  npm-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: node scripts/build-dist.js
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  marketplace-sync:
+    runs-on: ubuntu-latest
+    needs: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/build-dist.js
+      - name: Sync + push marketplace repo
+        env:
+          TOKEN: ${{ secrets.MARKETPLACE_TOKEN }}
+          REPO: ${{ vars.MARKETPLACE_REPO }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$REPO" ]; then
+            echo "MARKETPLACE_TOKEN / MARKETPLACE_REPO not set — skipping marketplace sync."
+            exit 0
+          fi
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          node scripts/publish-marketplace.js \
+            --dest "${RUNNER_TEMP}/marketplace" \
+            --remote "https://x-access-token:${TOKEN}@github.com/${REPO}.git" \
+            --push --force
