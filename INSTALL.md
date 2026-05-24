@@ -53,6 +53,13 @@ Restart Claude Code → type `/e2e-engineering`.
 /plugin install e2e-engineering@e2e-engineering
 ```
 
+Automate the sync/publish (copies `dist/marketplace/` into a standalone repo, commits, pushes):
+```bash
+npm run publish:marketplace -- --remote <git-url> --push   # explicit remote
+npm run publish:marketplace -- --push                      # uses gh if installed
+npm run publish:marketplace                                # sync + commit only, prints next steps
+```
+
 ## Publishing the npm package
 
 ```bash

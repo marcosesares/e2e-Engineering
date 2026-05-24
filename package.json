@@ -8,12 +8,14 @@
   "type": "commonjs",
   "scripts": {
     "build": "node scripts/build-dist.js",
+    "publish:marketplace": "node scripts/build-dist.js && node scripts/publish-marketplace.js",
     "prepublishOnly": "node scripts/build-dist.js"
   },
   "files": [
     "bin/",
     "dist/",
-    "scripts/build-dist.js"
+    "scripts/build-dist.js",
+    "scripts/publish-marketplace.js"
   ],
   "keywords": [
     "claude",
