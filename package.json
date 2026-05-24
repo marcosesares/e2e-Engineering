@@ -28,6 +28,7 @@
     "workflow",
     "orchestrator"
   ],
+  "author": "marcoscesar-bt <marcosesares@gmail.com>",
   "license": "MIT",
   "engines": {
     "node": ">=18"

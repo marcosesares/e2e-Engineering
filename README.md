@@ -1,3 +1,40 @@
+# e2e-engineering
+
+Master engineering orchestrator — drives a Task from idea to passing E2E across three phases: **pre-implementation** (idea → approved PRD), **implementation** (vertical-slice TDD loop → green tests), **post-implementation** (review + human QA). Five hard gates, a `depends_on` slice DAG, and `.e2e-engineering/` state files keep the flow honest. The essay below ("AI-Engineering") is the philosophy this skill encodes.
+
+## Install
+
+```bash
+npx e2e-engineering init                     # auto-detect the agent in this project
+npx e2e-engineering init --target claude     # full skill → .claude/skills/e2e-engineering/
+npx e2e-engineering init --target cursor     # .cursor/rules/e2e-engineering.mdc + AGENTS.md
+npx e2e-engineering init --target codex      # AGENTS.md
+npx e2e-engineering init --target opencode   # AGENTS.md
+npx e2e-engineering init --target all        # everything
+```
+
+Flags: `--dest <dir>` · `--force` · `--dry-run`. Auto-detect: `.claude/` → claude · `.cursor/` → cursor · else → codex. An existing `AGENTS.md` is never clobbered (writes `AGENTS.e2e-engineering.md`).
+
+In Claude Code: `/e2e-engineering`. Also triggers on "ship-it", "ship it", "implement feature X", "write e2e for X", "build this end to end", "run the full flow".
+
+## Fidelity
+
+| | Claude Code | Codex / OpenCode / Cursor |
+|---|---|---|
+| Phases, 5 gates, DAG, TDD loop, state files, constitution | yes | yes |
+| Parallel slice execution (worktree fan-out) | yes | **no — sequential** |
+| Subagent dispatch, 65% auto-checkpoint, `/run`+`/verify` gate 5 | yes | manual |
+
+Portable targets run slices one at a time in dependency order; everything else is identical.
+
+## Claude marketplace
+
+Plugin lives in `dist/claude-plugin/`. Once pushed to a GitHub repo: `/plugin marketplace add <owner>/<repo>` then `/plugin install e2e-engineering@e2e-engineering`.
+
+MIT.
+
+---
+
 # AI-Engineering
 
 ## How to Build Software with AI Agents
