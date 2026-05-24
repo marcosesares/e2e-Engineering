@@ -1,0 +1,35 @@
+{
+  "name": "e2e-engineering",
+  "version": "1.0.0",
+  "description": "Master engineering orchestrator skill — idea to passing E2E across pre-implementation, implementation, and post-implementation phases. Installs into Claude Code (full fidelity), or as a portable AGENTS.md / Cursor rules variant (sequential).",
+  "bin": {
+    "e2e-engineering": "bin/install.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "node scripts/build-dist.js",
+    "prepublishOnly": "node scripts/build-dist.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "scripts/build-dist.js"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "skill",
+    "agents",
+    "agents-md",
+    "cursor",
+    "codex",
+    "opencode",
+    "tdd",
+    "workflow",
+    "orchestrator"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

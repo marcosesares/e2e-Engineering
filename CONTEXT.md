@@ -1,8 +1,8 @@
-# ship-it
+# e2e-engineering
 
 ## Language
 
-**ship-it**: Master orchestrator skill. Detects current phase, sequences sub-skills, loops until all exit conditions met.
+**e2e-engineering**: Master orchestrator skill. Detects current phase, sequences sub-skills, loops until all exit conditions met.
 _Avoid_: "engineering flow", "dev loop", "full pipeline"
 
 **Task**: Atomic unit of business intent that owns its own `prd.json` + `progress.txt`. New task = reset both files. Within a task, progress.txt is append-only.
@@ -71,7 +71,7 @@ _Avoid_: confusing with "grill-with-docs" (grill-with-docs requires existing doc
 
 **Prototype** (sub-skill): Conditional pre-impl step — fires when taste/UX/state-machine uncertainty needs concrete feedback. Throwaway experiment, not the final implementation. Two branches (from mattpocock): **ui** (visual variants, browser-driven feedback) and **logic** (state machine / terminal app, textual feedback) — different feedback loops; grill-me picks which fires.
 
-**triage** (sub-skill): 5-state intake machine (needs-triage → needs-info → ready-for-agent / ready-for-human / won't-fix). In ship-it's forward flow, to-issues output is born `ready-for-agent` and SKIPS triage. triage gates only EXTERNALLY-sourced work (bug reports, feature requests) and walled [[refactor candidates]] from map-codebase. Preserves "never AFK an un-triaged issue" where it matters.
+**triage** (sub-skill): 5-state intake machine (needs-triage → needs-info → ready-for-agent / ready-for-human / won't-fix). In e2e-engineering's forward flow, to-issues output is born `ready-for-agent` and SKIPS triage. triage gates only EXTERNALLY-sourced work (bug reports, feature requests) and walled [[refactor candidates]] from map-codebase. Preserves "never AFK an un-triaged issue" where it matters.
 
 **map-codebase** (sub-skill): Conditional pre-impl step — fires only on brownfield (task targets existing code). Produces `codebase-map.md`, SCOPED to *this* change (sprint-lifetime, can rot like [[Research]]), with 5 sections: (1) blast-radius modules, (2) seams/adapters (where tests attach), (3) local impact list, (4) existing language (fed to grill-with-docs to reconcile with CONTEXT.md), (5) refactor candidates. NOT a global C4/ERD/NxN matrix. See ADR 0009.
 _Avoid_: full C4/ERD/spec-impact matrices (too heavy, rots per slice); the global reverse-engineering artifacts the prototypes were studied with
@@ -80,12 +80,12 @@ _Avoid_: full C4/ERD/spec-impact matrices (too heavy, rots per slice); the globa
 
 **Pre-impl sequence**: grill-me → [map-codebase? (brownfield)] → [Research?] → [Prototype?] → to-prd. Bracketed steps are conditional; greenfield skips map-codebase.
 
-**Task type**: ship-it handles greenfield app, feature, bug fix, AND refactor — on new or existing codebases. README's architecture-improvement / "de-slop" flow is a refactor Task using map-codebase to surface candidates; human picks which refactor matters (not blind AFK refactor).
+**Task type**: e2e-engineering handles greenfield app, feature, bug fix, AND refactor — on new or existing codebases. README's architecture-improvement / "de-slop" flow is a refactor Task using map-codebase to surface candidates; human picks which refactor matters (not blind AFK refactor).
 
 **Refactor Task**: Runs the FULL flow, same phases as a feature — no lite path (ADR 0012). map-codebase → full PRD → to-issues → slices+TDD → mandatory e2e → review → human-QA. PRD carries **refactor-shaped stories** (behavior-preservation + structural goal, not forced `As a user…`). e2e is the safety net proving behavior preserved. Old code is **transformed** — modified OR removed depending on the refactor — captured as explicit acceptance criteria + migration-step slices (introduce new → migrate callers → modify/remove old). Hard gate 1 still applies (high blast radius).
 _Avoid_: "lite PRD" for refactors (superseded); skipping/lightening e2e on a refactor (it's the whole safety net)
 
-**Adopt mode**: One-time onboarding of ship-it into an in-progress project (`/ship-it adopt`). Two halves of different risk: (1) DOCS — auto-DRAFTS CONTEXT.md glossary + constitution + ADRs from existing code/docs, presented for human review/edit, NOT silently committed; (2) CODE — repo-wide map-codebase produces a prioritized refactor BACKLOG → triaged issues; code is NEVER auto-refactored. Human picks candidates; each conforms incrementally as a gated refactor Task. Docs conform now, code conforms over time. See ADR 0011.
+**Adopt mode**: One-time onboarding of e2e-engineering into an in-progress project (`/e2e-engineering adopt`). Two halves of different risk: (1) DOCS — auto-DRAFTS CONTEXT.md glossary + constitution + ADRs from existing code/docs, presented for human review/edit, NOT silently committed; (2) CODE — repo-wide map-codebase produces a prioritized refactor BACKLOG → triaged issues; code is NEVER auto-refactored. Human picks candidates; each conforms incrementally as a gated refactor Task. Docs conform now, code conforms over time. See ADR 0011.
 _Avoid_: auto-committing unreviewed standards docs (wrong domain language gets injected into every future subagent); whole-repo AFK refactor (README + [[constitution]] forbid it)
 
 **Vertical slice**: Implementation unit ordered by: tracer bullet → schema → business logic → API → UI. Ordering is expressed as `depends_on` edges in the DAG, not a fixed per-iteration count.
@@ -110,7 +110,7 @@ _Avoid_: "ralph.sh", "shell loop" (no external bash driver in default path)
 
 ## Relationships
 
-- **ship-it** detects entry **Phase** and sequences sub-skills
+- **e2e-engineering** detects entry **Phase** and sequences sub-skills
 - **Task** owns one `prd.json` and one `progress.txt`; resets both on new task
 - **Phase** contains exactly one **Loop**
 - **Loop** iterates over **Goals**; exits when exit condition met

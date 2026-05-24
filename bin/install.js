@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+const PKG_ROOT = path.resolve(__dirname, "..");
+const DIST = path.join(PKG_ROOT, "dist");
+
+const TARGETS = ["claude", "cursor", "codex", "opencode"];
+
+function log(msg) {
+  process.stdout.write(msg + "\n");
+}
+function warn(msg) {
+  process.stderr.write("! " + msg + "\n");
+}
+function die(msg) {
+  process.stderr.write("e2e-engineering: " + msg + "\n");
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const args = { _: [], target: null, dest: process.cwd(), force: false, dryRun: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--target" || a === "-t") args.target = argv[++i];
+    else if (a.startsWith("--target=")) args.target = a.slice("--target=".length);
+    else if (a === "--dest" || a === "-d") args.dest = path.resolve(argv[++i]);
+    else if (a.startsWith("--dest=")) args.dest = path.resolve(a.slice("--dest=".length));
+    else if (a === "--force" || a === "-f") args.force = true;
+    else if (a === "--dry-run" || a === "-n") args.dryRun = true;
+    else if (a === "--help" || a === "-h") args._.push("help");
+    else args._.push(a);
+  }
+  return args;
+}
+
+function detectTarget(dest) {
+  if (fs.existsSync(path.join(dest, ".claude"))) return "claude";
+  if (fs.existsSync(path.join(dest, ".cursor"))) return "cursor";
+  return "codex"; // AGENTS.md — read by Codex, OpenCode, and Cursor too
+}
+
+function copyRecursive(src, dst, { force, dryRun, seen }, written) {
+  const stat = fs.statSync(src);
+  if (stat.isDirectory()) {
+    if (!dryRun) fs.mkdirSync(dst, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      copyRecursive(path.join(src, entry), path.join(dst, entry), { force, dryRun, seen }, written);
+    }
+  } else {
+    if (seen.has(dst)) return; // already handled this run (e.g. AGENTS.md across multiple portable targets)
+    seen.add(dst);
+    if (fs.existsSync(dst) && !force) {
+      warn("skip (exists, use --force): " + dst);
+      return;
+    }
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+    }
+    written.push(dst);
+  }
+}
+
+function requireDist(rel) {
+  const p = path.join(DIST, rel);
+  if (!fs.existsSync(p)) {
+    die("missing dist artifact: " + rel + " — run `npm run build` in the package first.");
+  }
+  return p;
+}
+
+function installClaude(dest, opts, written) {
+  const src = requireDist(path.join("claude-plugin", "skills", "e2e-engineering"));
+  copyRecursive(src, path.join(dest, ".claude", "skills", "e2e-engineering"), opts, written);
+}
+
+function installAgentsMd(dest, opts, written) {
+  const src = requireDist(path.join("agents-md", "AGENTS.md"));
+  const target = path.join(dest, "AGENTS.md");
+  if (opts.seen.has(target) || opts.seen.has(path.join(dest, "AGENTS.e2e-engineering.md"))) return; // handled this run
+  if (fs.existsSync(target) && !opts.force) {
+    // Don't clobber an existing AGENTS.md — drop a sidecar and instruct.
+    const sidecar = path.join(dest, "AGENTS.e2e-engineering.md");
+    copyRecursive(src, sidecar, opts, written);
+    warn("AGENTS.md already exists. Wrote AGENTS.e2e-engineering.md instead — reference it from AGENTS.md, or re-run with --force to overwrite.");
+  } else {
+    copyRecursive(src, target, opts, written);
+  }
+}
+
+function installCursor(dest, opts, written) {
+  const rule = requireDist(path.join("cursor", ".cursor", "rules", "e2e-engineering.mdc"));
+  copyRecursive(rule, path.join(dest, ".cursor", "rules", "e2e-engineering.mdc"), opts, written);
+  // Cursor also reads AGENTS.md — install it for the flow body.
+  installAgentsMd(dest, opts, written);
+}
+
+function run(target, dest, opts, written) {
+  switch (target) {
+    case "claude": installClaude(dest, opts, written); break;
+    case "cursor": installCursor(dest, opts, written); break;
+    case "codex":
+    case "opencode": installAgentsMd(dest, opts, written); break;
+    default: die("unknown target: " + target + " (expected: " + TARGETS.join(", ") + ", or all)");
+  }
+}
+
+const HELP = `e2e-engineering — install the e2e-engineering engineering flow into a project
+
+Usage:
+  npx e2e-engineering init [options]
+
+Options:
+  -t, --target <name>   claude | cursor | codex | opencode | all   (default: auto-detect)
+  -d, --dest <dir>      target project dir                          (default: cwd)
+  -f, --force           overwrite existing files
+  -n, --dry-run         print what would be written, write nothing
+  -h, --help            show this
+
+Targets:
+  claude    full-fidelity skill → .claude/skills/e2e-engineering/ (parallel slices, gates, checkpoints)
+  cursor    .cursor/rules/e2e-engineering.mdc + AGENTS.md          (sequential)
+  codex     AGENTS.md                                       (sequential)
+  opencode  AGENTS.md                                       (sequential)
+  all       every target above
+
+Auto-detect: .claude/ → claude · .cursor/ → cursor · else → codex (AGENTS.md)`;
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const cmd = args._[0];
+
+  if (cmd === "help" || args._.includes("help")) {
+    log(HELP);
+    return;
+  }
+  if (cmd && cmd !== "init") {
+    die("unknown command: " + cmd + " (did you mean `init`?)\n\n" + HELP);
+  }
+
+  const dest = args.dest;
+  if (!fs.existsSync(dest)) die("dest does not exist: " + dest);
+
+  let targets;
+  if (args.target === "all") targets = TARGETS.slice();
+  else if (args.target) targets = [args.target];
+  else {
+    const detected = detectTarget(dest);
+    log("auto-detected target: " + detected + "  (override with --target)");
+    targets = [detected];
+  }
+
+  const opts = { force: args.force, dryRun: args.dryRun, seen: new Set() };
+  const written = [];
+  for (const t of targets) run(t, dest, opts, written);
+
+  if (args.dryRun) {
+    log("\n[dry-run] would write " + written.length + " file(s):");
+  } else {
+    log("\ninstalled " + written.length + " file(s):");
+  }
+  for (const f of written) log("  " + path.relative(dest, f));
+
+  if (!args.dryRun && targets.includes("claude")) {
+    log("\nClaude Code: restart/refresh, then type `/e2e-engineering`.");
+  }
+  if (!args.dryRun && targets.some((t) => t !== "claude")) {
+    log("Codex/Cursor/OpenCode: the flow is in AGENTS.md — your agent reads it automatically.");
+  }
+}
+
+main();
