@@ -172,7 +172,7 @@ The risks
 
 ## Part 3 — Establish shared language before building
 
-### 3.1 Why “Grill Me” is useful
+### 3.1 Why “Grill Me” is useful (@mattpocock)
 
 The original **grill-me** skill asks the AI to interview the user relentlessly until both sides reach a shared understanding. It walks down the design tree and resolves dependencies between decisions one by one.
 
@@ -193,7 +193,7 @@ Use this when an idea is still vague.
 
 ---
 
-### 3.2 Prefer “Grill with Docs” when there is a codebase
+### 3.2 Prefer “Grill with Docs” when there is a codebase (@mattpocock)
 
 The newer workflow replaces pure grill-me with **grill-with-docs** when a codebase exists. The problem with grill-me alone is that good terminology may emerge during the conversation but not get documented. Then the user has to re-explain the same domain concepts again in future sessions.
 
