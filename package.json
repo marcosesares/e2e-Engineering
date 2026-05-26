@@ -1,6 +1,6 @@
 {
   "name": "e2e-engineering",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Master engineering orchestrator skill — idea to passing E2E across pre-implementation, implementation, and post-implementation phases. Installs into Claude Code (full fidelity), or as a portable AGENTS.md / Cursor rules variant (sequential).",
   "bin": {
     "e2e-engineering": "bin/install.js"

@@ -64,7 +64,7 @@ Repeat until COMPLETE (all stories `status: done`):
 1. **Compute ready set** — stories whose `depends_on` are all `done` AND own `status: todo`.
 2. **Fan-out** — dispatch each ready story to its OWN git worktree + subagent (use EnterWorktree). Inject [constitution](./constitution.md) + the story + its testCases into each subagent. Subagent runs [tdd](./impl/tdd.md): gap-check → red-green-refactor → automate its FEATURE e2e → return SUMMARY ONLY.
    - **HARD GATE 2 — TDD red before green.** Each subagent must write a failing test before production code. Enforced inside tdd.md.
-   - **HARD GATE 3 — debug escalation.** Subagent fails 3 fix attempts → orchestrator re-dispatches ONCE with [systematic-debugging](./impl/systematic-debugging.md) (4-phase root-cause). Still red → mark story `blocked`, append `## Blocked` in progress.txt, keep draining the ready set. Escalate to human ONLY on stall (no ready work left, or every remaining story depends on a blocked one).
+   - **HARD GATE 3 — debug escalation.** Subagent fails 3 fix attempts → orchestrator re-dispatches ONCE with [systematic-debugging](./impl/systematic-debugging.md) (4-phase root-cause). Still red → mark story `blocked`, append `## Blocked` in progress.txt, keep draining the ready set. Escalate to human ONLY on stall (no ready work left, or every remaining story depends on a blocked one). Emit `<e2e-stall reason="all-stories-blocked" />` before escalating.
 3. **Fan-in (orchestrator, serial — sole writer):** for each returned summary:
    - Per-slice review: check summary against the story spec + constitution. Drift → bounce back to the subagent, do not merge.
    - Merge the worktree branch into baseBranch. Resolve conflicts (never discard work).
@@ -88,7 +88,7 @@ Entry: gate 5 passed.
 1. [review](./post-impl/review.md) — fresh-context, full-diff, cross-slice audit by a clean reviewer. Findings ranked by severity.
 2. [human-qa](./post-impl/human-qa.md) — walk the Manual test-case set (the disposition `Manual` cases). Single human-approval chokepoint: in ONE touch the human approves QA sign-off AND batched `## Pending Amendments` → promote to [constitution](./constitution.md) (bump version) or drop.
 
-Task close: extract durable learnings, ensure amendments resolved, progress.txt resets on the NEXT task.
+Task close: extract durable learnings, ensure amendments resolved, progress.txt resets on the NEXT task. Emit `<e2e-complete stories="N" />` (N = total story count from prd.json).
 
 ---
 

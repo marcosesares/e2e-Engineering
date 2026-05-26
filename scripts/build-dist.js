@@ -49,6 +49,16 @@ function main() {
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
 
+  // afk wrapper — copy to dist root so install.js can distribute it
+  const afkSrc = path.join(REPO, "scripts", "afk.ps1");
+  const afkDst = path.join(REPO, "dist", "afk.ps1");
+  if (fs.existsSync(afkSrc)) {
+    fs.copyFileSync(afkSrc, afkDst);
+    process.stdout.write("build-dist: copied afk.ps1 → " + path.relative(REPO, afkDst) + "\n");
+  } else {
+    process.stderr.write("build-dist: WARNING — scripts/afk.ps1 not found, skipping\n");
+  }
+
   const count = countFiles(PLUGIN_SKILLS);
   process.stdout.write("build-dist: synced " + count + " skill file(s) → " + path.relative(REPO, PLUGIN_SKILLS) + "\n");
 }

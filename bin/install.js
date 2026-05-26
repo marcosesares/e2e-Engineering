@@ -72,12 +72,19 @@ function requireDist(rel) {
   return p;
 }
 
+function installAfkWrapper(dest, opts, written) {
+  const src = requireDist("afk.ps1");
+  copyRecursive(src, path.join(dest, "scripts", "afk.ps1"), opts, written);
+}
+
 function installClaude(dest, opts, written) {
   const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "skills", "e2e-engineering"));
   copyRecursive(src, path.join(dest, ".claude", "skills", "e2e-engineering"), opts, written);
+  installAfkWrapper(dest, opts, written);
 }
 
 function installAgentsMd(dest, opts, written) {
+  installAfkWrapper(dest, opts, written);
   const src = requireDist(path.join("agents-md", "AGENTS.md"));
   const target = path.join(dest, "AGENTS.md");
   if (opts.seen.has(target) || opts.seen.has(path.join(dest, "AGENTS.e2e-engineering.md"))) return; // handled this run
