@@ -34,14 +34,16 @@ After writing the three files:
    Context at 65%+ — checkpoint saved.
    Handoff: .e2e-engineering/handoff-<phase>-<timestamp>.md
 
-   Resume:
+   Resume (manual):
      1. /clear    ← reset context
      2. /e2e-engineering    ← fresh session reads handoff automatically
+
+   <e2e-checkpoint handoff=".e2e-engineering/handoff-<phase>-<timestamp>.md" />
    ```
-   (substitute the actual handoff filename in the Handoff line)
+   (substitute actual handoff path in BOTH the Handoff line and the signal)
 2. **HARD STOP** — process NO further messages in this session. Any further user message gets one reply: "Checkpoint saved — `/clear` then `/e2e-engineering` to resume."
 
-> **Unattended automation:** a future `ralph --afk` wrapper will detect the checkpoint signal and restart automatically (ADR 0005). Not yet implemented — manual `/clear` + `/e2e-engineering` is the current path.
+> **Unattended automation (AFK wrapper):** `scripts/afk.ps1` detects `<e2e-checkpoint />` and restarts automatically. Run `.\scripts\afk.ps1` after gate 1 to enable AFK mode. Supports claude (default), opencode, codex via `-AI` param. (ADR 0005)
 
 The fresh session runs [phase-transition](./phase-transition.md) bootstrap when `/e2e-engineering` is invoked.
 

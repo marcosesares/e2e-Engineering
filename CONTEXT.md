@@ -108,6 +108,9 @@ _Avoid_: "inline TDD" (orchestrator does not write slice code itself)
 **Loop driver**: The orchestrator skill itself, in-session — not an external shell script. Iterates slices, checkpoints at 65%, fresh session resumes from artifacts. Ralph's `ralph.sh` + `<promise>COMPLETE</promise>` rejected; COMPLETE maps to "all stories `passes: true`". See [[skill-driven-loop]] ADR 0005.
 _Avoid_: "ralph.sh", "shell loop" (no external bash driver in default path)
 
+**AFK wrapper**: Optional external script (`scripts/afk.ps1`) that drives unattended e2e-engineering runs. Spawns fresh `claude --print --dangerously-skip-permissions` sessions in a loop. Restarts on `<e2e-checkpoint>`, stops on `<e2e-stall>` or `<e2e-complete>`. Runs only after gate 1 (PRD approved). Not the default path — default is the in-session [[Loop driver]]. Supports claude (default), opencode, codex via preset commands.
+_Avoid_: "ralph loop", "ralph.sh", "session manager"
+
 ## Relationships
 
 - **e2e-engineering** detects entry **Phase** and sequences sub-skills
