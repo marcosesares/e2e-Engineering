@@ -10,8 +10,9 @@ When context reaches 65% (hook-injected %), **set a checkpoint flag** — do NOT
 | Mid-slice TDD loop | Finish current slice, checkpoint at fan-in |
 | Mid-subagent (spawned, not returned) | Wait for subagent result, checkpoint after fan-in |
 | Mid-user-message reply | Complete reply, then checkpoint |
+| Session start / after bootstrap, already ≥ 65% | Checkpoint immediately — do NOT start gate work. Write handoff from prd.json + progress.txt and end session. |
 
-Never abort mid-task. The 65% signal means "next safe stop, not right now."
+Never abort mid-task. The 65% signal means "next safe stop, not right now." Exception: if already ≥ 65% at session start (e.g., resumed from system compaction mid-flow), there is no in-flight work to finish — checkpoint is immediate.
 
 ## What to write (three files)
 1. **prd.json** — already maintained live by the orchestrator. Ensure `status` of every story is current.
