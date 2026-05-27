@@ -74,8 +74,13 @@ Repeat until COMPLETE (all stories `status: done`):
 
 ### After COMPLETE
 
+**Before GATE 4:** Check context. If ≥ 65%, write handoff + flush prd.json + progress.txt + end session per [context-checkpoint](./cross/context-checkpoint.md). Do not start the regression suite in a saturated context.
+
 4. [e2e-loop](./impl/e2e-loop.md) — FINAL pass. Automate the REGRESSION (cross-slice) test-cases now that the whole feature exists. Run the full accumulated suite.
    - **HARD GATE 4 — E2E suite green → post-implementation.** Full suite must pass.
+
+**After GATE 4, before GATE 5:** Flush prd.json + progress.txt to disk (ensure state is persisted). Then check context again. If ≥ 65%, write handoff + end session — do NOT enter the live verification loop. Playwright verification is the highest-token-growth phase (see BR-PLAYWRIGHT-01 in constitution); starting at ≥ 65% risks compaction mid-flow.
+
 5. [verification](./impl/verification.md) — gate 5.
    - **HARD GATE 5 — verification-before-completion.** Full suite re-run (all tests) + live exercise via `/run` + `/verify` + every PRD acceptance criterion ticked. Passing = implementation done.
 
@@ -110,5 +115,6 @@ Hard gates need explicit human consent and surface as a red-flags line in their 
 ## Cross-cutting
 
 - **Checkpoint at 65% context** — [context-checkpoint](./cross/context-checkpoint.md): write handoff doc + prd.json + progress.txt (caveman:ultra), then end the session.
+- **Gate-boundary context check** — Before entering GATE 4 and GATE 5, check context. If ≥ 65%, checkpoint instead of entering the gate. Rationale: high-cost phases (regression suite, Playwright verification) can add 30–90K tokens; entering them in a saturated context causes compaction mid-flow.
 - **Phase transition / fresh-session resume** — [phase-transition](./cross/phase-transition.md): read handoff → prd.json → progress.txt → invoke suggested skill. Do NOT read CONTEXT.md first (handoff carries a language summary; pull glossary on demand).
 - **Writing style:** generated state artifacts (progress.txt, handoff) = caveman:ultra. User-facing conversation = caveman:full. Code, commits, PRs = normal prose.
