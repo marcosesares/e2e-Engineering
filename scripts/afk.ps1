@@ -1,26 +1,34 @@
 <#
 .SYNOPSIS
-  AFK wrapper — unattended e2e-engineering session driver.
-  Spawns fresh AI sessions in loop. Auto-restarts on 65% checkpoint.
+  AFK driver — unattended e2e-flight Task-queue drain.
+  Loops fresh /e2e-flight sessions. Each spawn = fresh context (external /clear).
 
 .DESCRIPTION
-  WARNING: Runs with --dangerously-skip-permissions (or equivalent).
-  All tool calls execute without approval. Only launch after gate 1.
+  Drives the Task queue at .e2e-engineering/queue.json one Task-step per spawn.
+  WARNING: Runs with --dangerously-skip-permissions. All tool calls execute
+  without approval. Only reachable post-gate-1 (flight needs a selected queue).
+
+  Sets E2E_DRIVER=1 so /e2e-flight enters worker mode (Step 0 guard) instead of
+  re-spawning a driver. Catches four signals on each session's tail:
+    <e2e-complete>   -> success, exit 0
+    <e2e-stall>      -> human needed, exit 1
+    <e2e-task-done>  -> next Task, respawn
+    <e2e-checkpoint> -> resume same Task, respawn
 
 .USAGE
-  .\scripts\afk.ps1                              # claude default
-  .\scripts\afk.ps1 -AI opencode                 # opencode preset
-  .\scripts\afk.ps1 -AI codex                    # codex preset
-  .\scripts\afk.ps1 -Command "custom cmd"        # custom override
-  .\scripts\afk.ps1 -Skill "/other-skill"        # different skill
-  .\scripts\afk.ps1 -MaxSessions 50              # raise ceiling
+  .\afk.ps1                          # claude default, /e2e-flight
+  .\afk.ps1 -AI opencode             # opencode preset
+  .\afk.ps1 -AI codex                # codex preset
+  .\afk.ps1 -Command "custom cmd"    # custom override
+  .\afk.ps1 -Skill "/other-skill"    # different skill
+  .\afk.ps1 -MaxSessions 50          # raise ceiling
 #>
 param(
     [ValidateSet("claude", "opencode", "codex")]
     [string]$AI = "claude",
     [string]$Command = "",
-    [string]$Skill = "/e2e-engineering",
-    [int]$MaxSessions = 30
+    [string]$Skill = "/e2e-flight",
+    [int]$MaxSessions = 50
 )
 
 Set-StrictMode -Version Latest
@@ -36,16 +44,19 @@ $cmd = if ($Command) { $Command } else { $presets[$AI] }
 $session = 0
 $startTime = Get-Date
 
-function Write-Ralph([string]$msg, [string]$color = "Cyan") {
+# Worker mode for /e2e-flight Step 0 guard. Set once for all child spawns.
+$env:E2E_DRIVER = "1"
+
+function Write-Afk([string]$msg, [string]$color = "Cyan") {
     Write-Host "[afk $(Get-Date -Format 'HH:mm:ss')] $msg" -ForegroundColor $color
 }
 
-Write-Ralph "Starting. AI=$AI MaxSessions=$MaxSessions Skill=$Skill"
-Write-Ralph "Command: $cmd" "DarkGray"
+Write-Afk "Starting. AI=$AI MaxSessions=$MaxSessions Skill=$Skill"
+Write-Afk "Command: $cmd" "DarkGray"
 
 while ($session -lt $MaxSessions) {
     $session++
-    Write-Ralph "Session $session/$MaxSessions" "Green"
+    Write-Afk "Session $session/$MaxSessions" "Green"
 
     $outputLines = [System.Collections.Generic.List[string]]::new()
     Invoke-Expression $cmd 2>&1 | ForEach-Object {
@@ -55,28 +66,33 @@ while ($session -lt $MaxSessions) {
 
     $tail = ($outputLines | Select-Object -Last 30) -join "`n"
 
+    # Order matters: complete/stall are terminal; task-done/checkpoint respawn.
     if ($tail -match '<e2e-complete\s*(?:[^/]*)/>') {
         $elapsed = ((Get-Date) - $startTime).ToString("hh\:mm\:ss")
-        Write-Ralph "COMPLETE after $session session(s) [$elapsed]" "Green"
+        Write-Afk "COMPLETE — queue drained after $session session(s) [$elapsed]" "Green"
         exit 0
     }
 
-    if ($tail -match '<e2e-checkpoint\s+handoff="([^"]*)"') {
-        Write-Ralph "Checkpoint. Handoff: $($Matches[1])" "Cyan"
-        Write-Ralph "Restarting session $($session + 1)..."
-        continue
-    }
-
     if ($tail -match '<e2e-stall\s+reason="([^"]*)"') {
-        Write-Ralph "STALL: $($Matches[1]). Human input required." "Yellow"
-        Write-Ralph "Resolve stall then resume: .\scripts\afk.ps1"
+        Write-Afk "STALL: $($Matches[1]). Human input required." "Yellow"
+        Write-Afk "Resolve then resume: .\.e2e-engineering\afk.ps1"
         exit 1
     }
 
-    Write-Ralph "No signal detected in session $session. Review output." "Red"
+    if ($tail -match '<e2e-task-done\s+id="([^"]*)"') {
+        Write-Afk "Task done: $($Matches[1]). Next Task -> session $($session + 1)..." "Cyan"
+        continue
+    }
+
+    if ($tail -match '<e2e-checkpoint\s+handoff="([^"]*)"') {
+        Write-Afk "Checkpoint. Handoff: $($Matches[1]). Resuming same Task..." "Cyan"
+        continue
+    }
+
+    Write-Afk "No signal detected in session $session. Review output." "Red"
     $outputLines | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
     exit 2
 }
 
-Write-Ralph "Safety ceiling reached ($MaxSessions sessions)." "Red"
+Write-Afk "Safety ceiling reached ($MaxSessions sessions)." "Red"
 exit 3

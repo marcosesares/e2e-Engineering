@@ -2,6 +2,9 @@
 
 Sequence a restarted session MUST follow before any work. Applies to both phase boundaries AND mid-phase context restarts (after a 65% checkpoint). Provenance: ralph stateless-fresh-agent. ADR 0004.
 
+## Step 0 — Task-level read (multi-Task / flight only)
+If `.e2e-engineering/queue.json` exists (multi-Task mode, [/e2e-flight](../flight/SKILL.md)), read it FIRST to learn WHICH Task: the single `status:in-progress` Task (resume) or the next selected `todo` Task (pick + flip in-progress). Its dir is `.e2e-engineering/tasks/<id>/` — root the read order below there. Single-Task mode (no queue.json) reads directly from `.e2e-engineering/`. See ADR 0017, [queue.json](../schemas/queue.json.md).
+
 ## Bootstrap read order (strict)
 1. **Handoff doc** (`.e2e-engineering/handoff-*.md`, latest) — FIRST. Self-contained primer: domain language, current state, next action, artifacts, suggested skill.
 2. **prd.json** — structured state: story statuses, DAG, taskType, baseBranch.

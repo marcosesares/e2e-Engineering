@@ -123,8 +123,33 @@ _Avoid_: "inline TDD" (orchestrator does not write slice code itself)
 **Loop driver**: The orchestrator skill itself, in-session — not an external shell script. Iterates slices, checkpoints at 65%, fresh session resumes from artifacts. Ralph's `ralph.sh` + `<promise>COMPLETE</promise>` rejected; COMPLETE maps to "all stories `passes: true`". See [[skill-driven-loop]] ADR 0005.
 _Avoid_: "ralph.sh", "shell loop" (no external bash driver in default path)
 
-**AFK wrapper**: Optional external script (`scripts/afk.ps1`) that drives unattended e2e-engineering runs. Spawns fresh `claude --print --dangerously-skip-permissions` sessions in a loop. Restarts on `<e2e-checkpoint>`, stops on `<e2e-stall>` or `<e2e-complete>`. Runs only after gate 1 (PRD approved). Not the default path — default is the in-session [[Loop driver]]. Supports claude (default), opencode, codex via preset commands.
+**AFK wrapper**: External driver script (`.e2e-engineering/afk.ps1` + `afk.sh`, cross-platform) that runs the [[Task queue]] drain unattended. Sets `E2E_DRIVER=1` then loops `claude --print --dangerously-skip-permissions "/e2e-flight"`. Catches four signals: `<e2e-checkpoint>` (respawn, resume same Task) · `<e2e-task-done>` (respawn, next Task) · `<e2e-stall>` (stop, human needed) · `<e2e-complete>` (queue drained, success). Each respawn = a fresh context (the external equivalent of `/clear`). Launched by [[/e2e-flight]]'s Step 0 [[E2E_DRIVER guard]], never invoked by [[/e2e-engineering]] directly. Supports claude (default), opencode, codex via preset commands.
 _Avoid_: "ralph loop", "ralph.sh", "session manager"
+
+## Multi-task flight
+
+**/e2e-flight**: Headless, driver-run sibling skill to [[/e2e-engineering]]. Drains the [[Run selection]] from the [[Task queue]] one Task at a time (impl → gate 4 → automated gate 5 → review), parking human-QA. Step 0 [[E2E_DRIVER guard]]: if `E2E_DRIVER` unset, spawn the [[AFK wrapper]] then exit (bootstrap); if set, do real flight work for one Task-step then exit. Runs ONE Task-step per process — the wrapper, not the skill, owns the loop.
+_Avoid_: "the orchestrator" (that's [[/e2e-engineering]]'s interactive role), "in-session loop" (flight's loop is external)
+
+**/e2e-engineering**: Interactive, human-driven front door. Owns pre-implementation per feature (grill-me → … → to-prd → hard gate 1), appends each approved feature to the [[Task queue]], shows the [[Run selection]] checkbox, then invokes [[/e2e-flight]]. Also auto-detects [[pending-qa]] Tasks on entry and offers the [[QA sign-off session]]. The only skill a human types.
+
+**Task queue** (`.e2e-engineering/queue.json`): Cross-Task ordering layer ABOVE per-Task `prd.json` — the repo's documented backlog of [[Task]]s. Each entry: `id`, `priority`, `dependsOn` ([[Task dependsOn]]), `status`, `selected` ([[Run selection]]). Two disjoint-field writers, never concurrent: [[/e2e-engineering]] creates entries (at gate 1); [[/e2e-flight]] flips `status`. Each Task's body lives in `.e2e-engineering/tasks/<id>/` (prd.json, progress.txt, handoff.md, [[qa-signoff.md]]).
+_Avoid_: "backlog" (overloaded — story-level work is the issue tracker), "feature list"
+
+**Task `dependsOn`**: Cross-Task dependency edge in [[Task queue]] (camelCase). DISTINCT from story-level `depends_on` (snake_case, the within-PRD tracer→schema→logic→ui DAG). The casing IS the scope signal. Selecting a Task auto-includes its unmet `dependsOn` Tasks.
+_Avoid_: writing it `depends_on` (collides with the story-level field)
+
+**Run selection** (`selected` flag in queue.json): Which queued Tasks THIS flight drains. Orthogonal to `priority` (ordering) and `status` (lifecycle). Set via the checkbox [[/e2e-engineering]] shows at launch; flight drains only `selected:true` + `status:todo`, in priority + `dependsOn` order.
+
+**pending-qa**: Task [[status]] between `in-progress` and `done`. Flight has run everything automatable (gates 4, automated half of 5, review) and parked human sign-off in [[qa-signoff.md]]. Only the [[QA sign-off session]] flips `pending-qa → done`. `<e2e-complete>` fires when no selected Task is `todo`/`in-progress` (all are pending-qa/done/blocked).
+
+**qa-signoff.md** (`tasks/<id>/qa-signoff.md`): Per-Task human checklist written by flight when it defers human-QA. Holds manual test cases to walk, auto-verified ACs to eyeball, pending amendments to promote/drop, and a [[QA finding]]s section. The audit record; [[Task queue]] holds the actionable state.
+
+**QA sign-off session**: Batched post-flight human pass (option B), entered via bare [[/e2e-engineering]] (auto-detected) or `/e2e-engineering qa`. Walks every [[pending-qa]] Task's [[qa-signoff.md]], approves (→ `done`) and clears pending amendments in one touch. Wraps the existing post-impl human-qa sub-skill across multiple Tasks.
+
+**QA finding**: An issue logged during the [[QA sign-off session]]. Routed through the existing `triage` sub-skill into a NEW [[Task]] in the queue — a bug becomes a linked bugfix Task (the built Task still goes `done`, not reopened); a new idea becomes a feature Task (`status:todo`, unselected). Closes the loop: findings re-enter the queue for a future flight.
+
+**E2E_DRIVER guard**: Env var set by the [[AFK wrapper]] before each spawn. [[/e2e-flight]] Step 0 reads it: SET = worker mode (do one Task-step, exit); UNSET = bootstrap mode (spawn the wrapper, exit). Doubles as the nesting guard — worker sessions never re-spawn a driver.
 
 ## Relationships
 
@@ -143,6 +168,12 @@ _Avoid_: "ralph loop", "ralph.sh", "session manager"
 - **to-prd** converts grill-me notes into formal PRD; owns its own interview step (no double-interview)
 - **grill-with-docs** drives **Implementation** loop start (CONTEXT.md + ADRs already exist at this point)
 - **Fresh session bootstrap** sequence applies to both phase transitions AND mid-phase context restarts
+- **[[/e2e-engineering]]** (interactive) produces [[Task queue]] entries; **[[/e2e-flight]]** (headless) consumes them — disjoint writers, sequential in time
+- **[[Task queue]]** holds many **[[Task]]**s; each Task still owns one prd.json + progress.txt under `tasks/<id>/`
+- **[[/e2e-flight]]** holds at most ONE Task `in-progress` — Task-to-Task drain is serial; parallelism lives INSIDE a Task (fan-out/fan-in slices)
+- **[[AFK wrapper]]** owns the external loop (Task-drain + context-reset restarts); the [[Loop driver]] owns the in-session impl-slice loop — two loops at different altitudes (ADR 0005 governs the inner, ADR 0015 the outer)
+- **[[QA finding]]** flows QA sign-off → triage → new **[[Task]]** in the [[Task queue]] — the cycle closes back on itself
+- Fresh **[[/e2e-flight]]** bootstrap = read [[Task queue]] (which Task) THEN the existing **Fresh session bootstrap** (handoff → prd.json → progress.txt)
 
 ## Flagged ambiguities
 
@@ -150,3 +181,6 @@ _Avoid_: "ralph loop", "ralph.sh", "session manager"
 - "E2E" scope — E2E tests are both implementation loop exit gate AND post-impl verification artifact. Not post-impl only.
 - "progress.txt append-only" — true within a task; reset when new task begins. Holds under parallelism because the orchestrator is the [[sole writer]] — subagents return summaries, never append directly.
 - "one slice per iteration" — SUPERSEDED. The unit per iteration is the [[ready set]] (DAG-driven), which may fan out to multiple parallel subagents. See ADR 0006.
+- "depends_on" — scope-overloaded. Story-level = snake_case `depends_on` (within one PRD); Task-level = camelCase `dependsOn` (across the [[Task queue]]). Casing disambiguates; never write Task deps as snake_case. See ADR 0017.
+- "single e2e-engineering skill" — REFINED. Split into interactive [[/e2e-engineering]] + headless [[/e2e-flight]] along the human/headless seam. See ADR 0016.
+- "loop runs in-session, not external shell" (ADR 0005) — SCOPED to the impl-slice loop only. The Task-drain + context-reset loop IS external (the [[AFK wrapper]]) — a higher altitude ADR 0005 never addressed. See ADR 0015.

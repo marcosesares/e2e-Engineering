@@ -1,0 +1,9 @@
+# External session-loop for Task-drain and context-reset
+
+ADR 0005 rejected an external shell driver: the loop runs in-session, the orchestrator is the driver, `ralph.sh` + `<promise>COMPLETE</promise>` are out. That decision stands — **for the impl-slice loop**. It iterates the ready set inside one session, checkpoints at 65%, and is the orchestrator's own job. Nothing here reopens that.
+
+What ADR 0005 never addressed is a higher altitude: draining **many** Tasks unattended, and surviving context resets that no in-session loop can perform on itself. A skill running inside a Claude session cannot `/clear` itself and keep executing — `/clear` wipes the very instructions doing the work. The only mechanism that yields fresh-context-then-continue is a **new process**. So the Task-to-Task drain and the at-boundary context resets must be driven from outside the session.
+
+We add an **external driver** (the [[AFK wrapper]], `afk.ps1` + `afk.sh`) that loops `claude --print "/e2e-flight"`, each spawn a fresh context (the external equivalent of `/clear`). It catches four signals — `<e2e-checkpoint>` (resume same Task), `<e2e-task-done>` (next Task), `<e2e-stall>` (stop, human), `<e2e-complete>` (done) — and respawns or exits accordingly. `/e2e-flight` runs exactly ONE Task-step per process then exits; the wrapper owns the loop.
+
+This composes with ADR 0005 rather than contradicting it: two loops at different altitudes. ADR 0005's loop is **inner** (slices within one Task, in-session, sole-writer orchestrator). This loop is **outer** (Tasks within the queue + context-reset restarts, across processes). The contradiction is only apparent — "in-session loop" and "external loop" describe different scopes. The cost is that unattended runs now depend on an external script being present and correct; mitigated by shipping it cross-platform inside `.e2e-engineering/` and having `/e2e-flight` self-bootstrap it via the [[E2E_DRIVER guard]] (ADR 0016).

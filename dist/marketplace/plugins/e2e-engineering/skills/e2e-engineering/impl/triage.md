@@ -17,6 +17,7 @@ needs-triage → needs-info → ready-for-agent
 ## What feeds triage
 1. External bug reports / feature requests.
 2. Refactor candidates from [map-codebase](../pre-impl/map-codebase.md) §5 — each becomes a NEW issue here, human-gated into its own refactor Task. NEVER auto-actioned.
+3. **QA findings** from the multi-Task [human-qa](../post-impl/human-qa.md) sign-off session — each becomes a NEW [Task queue](../schemas/queue.json.md) entry (`status:todo`, unselected): a **bug** → bugfix Task with `parentTask=<built task id>` (the built Task stays `done`, not reopened); a **new idea** → feature Task. Closes the QA→queue loop (ADR 0018).
 
 ## Red flags (stop)
 - Sending forward-flow to-issues slices through triage (they skip it).

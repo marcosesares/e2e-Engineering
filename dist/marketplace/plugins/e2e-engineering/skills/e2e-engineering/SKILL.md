@@ -7,7 +7,9 @@ description: Master engineering orchestrator — drives a Task from idea to pass
 
 Master skill. Detect phase + task type, route mode, sequence sub-skills, drive the loop, enforce gates, checkpoint. Read CONTEXT.md (glossary) for any term below.
 
-State lives under `.e2e-engineering/` at repo root: `prd.json`, `progress.txt`, `codebase-map.md` (brownfield), `research.md` (if research ran), `test-cases/*.md`, handoff docs. Schemas: [prd.json](./schemas/prd.json.md), [progress.txt](./schemas/progress.txt.md), [codebase-map](./schemas/codebase-map.md).
+State lives under `.e2e-engineering/`. Multi-Task layout (the default once a [Task queue](./schemas/queue.json.md) exists): `queue.json` at the root, and each Task's body under `tasks/<id>/` — `prd.json`, `progress.txt`, `codebase-map.md` (brownfield), `research.md`, `test-cases/*.md`, `qa-signoff.md`, handoff docs. Single-Task legacy layout (no queue.json) keeps those files directly under `.e2e-engineering/`. Schemas: [queue.json](./schemas/queue.json.md), [prd.json](./schemas/prd.json.md), [progress.txt](./schemas/progress.txt.md), [qa-signoff](./schemas/qa-signoff.md), [codebase-map](./schemas/codebase-map.md).
+
+This skill is the **interactive front door** (human-driven pre-implementation + batched QA sign-off). The automated implementation drain is [/e2e-flight](./flight/SKILL.md), launched at gate 1. See ADR 0016 (the split), 0017 (queue), 0018 (QA deferral).
 
 Durable project docs live at repo ROOT (outlive any task): `CONTEXT.md` (glossary), [constitution](./constitution.md) (generic engineering standards), `ARCHITECTURE.md` (project-specific structure + conventions — the "right route" map; schema: [architecture](./schemas/architecture.md)). ARCHITECTURE.md is written ONLY in human phases (pre-impl seed + post-impl human-QA amend); the implementation loop reads it, never writes it. See ADR 0013.
 
@@ -18,7 +20,8 @@ Durable project docs live at repo ROOT (outlive any task): `CONTEXT.md` (glossar
 ## Step 0 — route mode
 
 - User invoked `/e2e-engineering adopt` → run [adopt](./adopt.md). One-time onboarding, not the per-task flow. Stop here.
-- Otherwise → per-task flow below.
+- User invoked `/e2e-engineering qa`, OR `queue.json` has any Task `status:pending-qa` → run the **QA sign-off session** ([human-qa](./post-impl/human-qa.md) multi-Task mode): walk every pending-qa Task's [qa-signoff.md](./schemas/qa-signoff.md), sign off (→ `done`), route findings through [triage](./impl/triage.md) into new queue Tasks. Offer this first when pending-qa work exists. Stop here when done.
+- Otherwise → per-feature flow below (spec → gate 1 → queue → launch flight).
 
 ## Step 1 — detect phase + task type
 
@@ -37,31 +40,36 @@ Confirm the detected entry with the user in one line before proceeding.
 
 ## Pre-implementation phase
 
-Sequence (task-type adaptive):
+Sequence (bracketed = conditional): **grill-me → [map-codebase?] → [research?] → [prototype?] → to-prd**.
 
-**Greenfield:** grill-me → [research?] → [prototype?] → to-prd
-
-**Brownfield:** map-codebase → grill-with-docs → [research?] → [prototype?] → to-prd
-
-1. [grill-me](./pre-impl/grill-me.md) — Karpathy brainstorm loop. Greenfield only. Stateless, one question at a time, no doc deps. Loops until user approves direction.
+1. [grill-me](./pre-impl/grill-me.md) — Karpathy brainstorm loop. Stateless, one question at a time, no doc deps. Also gates whether map-codebase / research / prototype fire. Loops until user approves direction.
 2. [map-codebase](./pre-impl/map-codebase.md) — brownfield only. Produces `codebase-map.md` (5 sections, scoped). Section 5 refactor candidates are WALLED.
-3. [grill-with-docs](./impl/grill-with-docs.md) — brownfield only. Reconciles brainstorm direction + codebase-map "existing language" against CONTEXT.md glossary. Gates whether research / prototype fire.
-4. [research](./pre-impl/research.md) — only if task leans on external APIs / unfamiliar libs. Produces `research.md` (rots).
-5. [prototype](./pre-impl/prototype.md) — only if taste/UX/state-machine uncertainty needs concrete feedback. Throwaway. ui-branch or logic-branch.
-6. [to-prd](./pre-impl/to-prd.md) — convert brainstorm notes (grill-me or grill-with-docs) into the formal PRD → writes `prd.json`. Owns its own interview step (no double-interview). Refactor-shaped stories allowed. Captures testing-decisions that become test-cases.
+3. [research](./pre-impl/research.md) — only if task leans on external APIs / unfamiliar libs. Produces `research.md` (rots).
+4. [prototype](./pre-impl/prototype.md) — only if taste/UX/state-machine uncertainty needs concrete feedback. Throwaway. ui-branch or logic-branch.
+5. [to-prd](./pre-impl/to-prd.md) — convert grill-me notes into the formal PRD → writes `prd.json`. Owns its own interview step (no double-interview). Refactor-shaped stories allowed. Captures testing-decisions that become test-cases.
 
 **HARD GATE 1 — PRD approved → implementation.** Present the PRD; require explicit human consent before any code. Do not proceed on silence.
 
-**→ UNCONDITIONAL gate reset.** Once consent is given, checkpoint and end the session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Implementation starts in a fresh session. Phase-boundary gates (1, 4, 5) always reset; this prevents pre-impl grilling context from contaminating the impl loop. (AFK wrapper auto-resumes on the `<e2e-checkpoint>` signal.)
+**→ On consent: queue the Task, then batch or launch.** Implementation is automated by [/e2e-flight](./flight/SKILL.md), not run inline (ADR 0016). At gate-1 approve:
+
+1. **Write the Task body** under `.e2e-engineering/tasks/<id>/` (prd.json + any pre-impl artifacts). `<id>` = kebab-case feature slug.
+2. **Append to [queue.json](./schemas/queue.json.md)** — entry `{ id, title, priority, dependsOn, status:todo, selected:false, parentTask:null }`. Ask the human for `priority` and any cross-Task `dependsOn` (camelCase — distinct from story-level `depends_on`). This skill is the queue's CREATE writer; flight only flips `status`.
+3. **Batch or launch?** Ask: *"Spec another feature, or launch flight now?"*
+   - **Another** → loop back to Pre-implementation (grill-me …) for the next feature. The queue grows. State this clearly so the human can stack a backlog before walking away.
+   - **Launch** → **Run-selection checkbox**: list all `status:todo` Tasks with priority + dependsOn; the human checks the subset to drain THIS flight. Validate + auto-include any unmet `dependsOn` (warn: "billing-export needs auth-login — adding it"). Set `selected:true` on the chosen set.
+4. **Invoke [/e2e-flight](./flight/SKILL.md).** Flight's Step 0 [E2E_DRIVER guard] self-bootstraps the [AFK wrapper](../../../scripts/afk.ps1) (detached, fresh window) and exits. This skill does NOT touch afk.ps1 directly. Tell the human: "Flight draining N Tasks — walk away; run `/e2e-engineering` later to QA-sign-off."
+
+Each flight spawn is a fresh context (the external equivalent of the gate-1 unconditional reset — ADR 0014/0015): pre-impl grilling never contaminates the impl loop because the impl loop runs in separate driver-spawned processes.
 
 ---
 
 ## Implementation phase
 
-Entry: PRD approved (gate 1 passed). Language already reconciled in pre-impl (grill-with-docs for brownfield; grill-me for greenfield).
+Entry: PRD approved (gate 1 passed). **In multi-Task mode this phase runs inside [/e2e-flight](./flight/SKILL.md)** (driver-spawned, headless), scoped to the current Task's `tasks/<id>/`. The description below is canonical — flight reuses it verbatim per Task. Single-Task legacy mode may still run it inline here.
 
-1. [to-issues](./impl/to-issues.md) — split PRD into vertical slices, emit the `depends_on` DAG (tracer→schema→logic→api→ui as edges), author test-case `.md` docs upfront and attach `testCases[]` per story. Reads `ARCHITECTURE.md` (if present) to pin each story's `integration` decision (which existing owner/seam it extends) and to add `depends_on` edges between stories that would write the same file. Output is born `ready-for-agent` (skips triage).
-2. [triage](./impl/triage.md) — only for EXTERNALLY-sourced work (bug reports, feature requests) and walled refactor candidates. Forward-flow slices skip it.
+1. [grill-with-docs](./impl/grill-with-docs.md) — run ONCE at entry. Reconcile PRD + (brownfield) codebase-map "existing language" against CONTEXT.md glossary. NOT per-slice.
+2. [to-issues](./impl/to-issues.md) — split PRD into vertical slices, emit the `depends_on` DAG (tracer→schema→logic→api→ui as edges), author test-case `.md` docs upfront and attach `testCases[]` per story. Reads `ARCHITECTURE.md` (if present) to pin each story's `integration` decision (which existing owner/seam it extends) and to add `depends_on` edges between stories that would write the same file. Output is born `ready-for-agent` (skips triage).
+3. [triage](./impl/triage.md) — only for EXTERNALLY-sourced work (bug reports, feature requests) and walled refactor candidates. Forward-flow slices skip it.
 
 ### The loop (skill-driven, in-session — ADR 0005)
 
@@ -100,10 +108,10 @@ Repeat until COMPLETE (all stories `status: done`):
 
 Entry: gate 5 passed.
 
-1. [review](./post-impl/review.md) — fresh-context, full-diff, cross-slice audit by a clean reviewer. Findings ranked by severity.
-2. [human-qa](./post-impl/human-qa.md) — walk the Manual test-case set (the disposition `Manual` cases). Single human-approval chokepoint: in ONE touch the human approves QA sign-off AND batched `## Pending Amendments` → promote to [constitution](./constitution.md) (bump version) or drop.
+1. [review](./post-impl/review.md) — fresh-context, full-diff, cross-slice audit by a clean reviewer. Findings ranked by severity. **In multi-Task mode flight runs this headless per Task**, before parking QA.
+2. [human-qa](./post-impl/human-qa.md) — walk the Manual test-case set (the disposition `Manual` cases). Single human-approval chokepoint: in ONE touch the human approves QA sign-off AND batched `## Pending Amendments` → promote to [constitution](./constitution.md) (bump version) or drop. **In multi-Task mode this is the batched QA sign-off session** (Step 0): flight deferred it per Task to `pending-qa` + qa-signoff.md; the human clears all pending-qa Tasks in one pass and routes findings → [triage](./impl/triage.md) → new queue Tasks (ADR 0018).
 
-Task close: extract durable learnings, ensure amendments resolved, progress.txt resets on the NEXT task. Emit `<e2e-complete stories="N" />` (N = total story count from prd.json).
+Task close (single-Task): extract durable learnings, ensure amendments resolved, progress.txt resets on the NEXT task. Emit `<e2e-complete stories="N" />`. Multi-Task: flight emits `<e2e-complete>` when the selected queue is drained (all selected pending-qa/done/blocked); the QA sign-off session then flips pending-qa → done.
 
 ---
 
