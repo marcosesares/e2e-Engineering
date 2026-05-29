@@ -1,6 +1,8 @@
-# context-checkpoint — 65% snapshot
+# context-checkpoint — snapshot + session reset
 
-When context reaches 65% (hook-injected %), **set a checkpoint flag** — do NOT interrupt immediately. Finish the current in-flight task to its next fan-in boundary, then save the checkpoint and end the session so a fresh one resumes cleanly. Provenance: ralph checkpoint/phase-transition. ADR 0002.
+Two triggers fire this skill:
+1. **65% threshold (in-phase net):** when context reaches 65% (hook-injected %), **set a checkpoint flag** — do NOT interrupt immediately. Finish the current in-flight task to its next fan-in boundary, then save and end the session. Provenance: ralph checkpoint/phase-transition. ADR 0002.
+2. **Unconditional gate reset (phase-boundary gates 1, 4, 5):** after a phase-boundary hard gate passes, checkpoint + end session REGARDLESS of context % — even at low %. No flag-and-wait: the gate is already a clean boundary, so checkpoint immediately. Gates 2/3 (per-slice, subagent-internal) do NOT trigger this. See ADR 0014.
 
 ## When to trigger
 
@@ -11,8 +13,9 @@ When context reaches 65% (hook-injected %), **set a checkpoint flag** — do NOT
 | Mid-subagent (spawned, not returned) | Wait for subagent result, checkpoint after fan-in |
 | Mid-user-message reply | Complete reply, then checkpoint |
 | Session start / after bootstrap, already ≥ 65% | Checkpoint immediately — do NOT start gate work. Write handoff from prd.json + progress.txt and end session. |
+| **Phase-boundary gate (1/4/5) just passed** | Checkpoint immediately, ignore % — the gate IS the safe stop. No flag-and-wait. |
 
-Never abort mid-task. The 65% signal means "next safe stop, not right now." Exception: if already ≥ 65% at session start (e.g., resumed from system compaction mid-flow), there is no in-flight work to finish — checkpoint is immediate.
+Never abort mid-task. The 65% signal means "next safe stop, not right now." Exceptions (checkpoint is immediate): already ≥ 65% at session start (resumed from compaction mid-flow, no in-flight work); OR a phase-boundary gate just passed (unconditional reset, the gate is the boundary).
 
 ## What to write (three files)
 1. **prd.json** — already maintained live by the orchestrator. Ensure `status` of every story is current.
@@ -30,18 +33,20 @@ Never abort mid-task. The 65% signal means "next safe stop, not right now." Exce
 
 After writing the three files:
 
-1. Output this exact message to the user:
+1. Output this exact message to the user (first line states the trigger):
    ```
-   Context at 65%+ — checkpoint saved.
+   <reason line> — checkpoint saved.
    Handoff: .e2e-engineering/handoff-<phase>-<timestamp>.md
 
    Resume (manual):
      1. /clear    ← reset context
      2. /e2e-engineering    ← fresh session reads handoff automatically
 
-   <e2e-checkpoint handoff=".e2e-engineering/handoff-<phase>-<timestamp>.md" />
+   <e2e-checkpoint reason="<reason>" handoff=".e2e-engineering/handoff-<phase>-<timestamp>.md" />
    ```
-   (substitute actual handoff path in BOTH the Handoff line and the signal)
+   - 65% trigger: reason line = `Context at 65%+`, signal `reason="threshold"`.
+   - Gate reset: reason line = `GATE <N> passed`, signal `reason="gate-<N>"` (N = 1, 4, or 5).
+   - Substitute actual handoff path in BOTH the Handoff line and the signal.
 2. **HARD STOP** — process NO further messages in this session. Any further user message gets one reply: "Checkpoint saved — `/clear` then `/e2e-engineering` to resume."
 
 > **Unattended automation (AFK wrapper):** `scripts/afk.ps1` detects `<e2e-checkpoint />` and restarts automatically. Run `.\scripts\afk.ps1` after gate 1 to enable AFK mode. Supports claude (default), opencode, codex via `-AI` param. (ADR 0005)

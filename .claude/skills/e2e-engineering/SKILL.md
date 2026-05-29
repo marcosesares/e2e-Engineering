@@ -47,7 +47,7 @@ Sequence (bracketed = conditional): **grill-me → [map-codebase?] → [research
 
 **HARD GATE 1 — PRD approved → implementation.** Present the PRD; require explicit human consent before any code. Do not proceed on silence.
 
-→ checkpoint candidate / phase transition to a fresh session.
+**→ UNCONDITIONAL gate reset.** Once consent is given, checkpoint and end the session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Implementation starts in a fresh session. Phase-boundary gates (1, 4, 5) always reset; this prevents pre-impl grilling context from contaminating the impl loop. (AFK wrapper auto-resumes on the `<e2e-checkpoint>` signal.)
 
 ---
 
@@ -78,15 +78,17 @@ Repeat until COMPLETE (all stories `status: done`):
 
 ### After COMPLETE
 
-**Before GATE 4:** Check context. If ≥ 65%, write handoff + flush prd.json + progress.txt + end session per [context-checkpoint](./cross/context-checkpoint.md). Do not start the regression suite in a saturated context.
+**Before GATE 4 (65% in-phase net):** Check context. If ≥ 65%, write handoff + flush prd.json + progress.txt + end session per [context-checkpoint](./cross/context-checkpoint.md). Do not start the regression suite in a saturated context. (This is the threshold net, not a phase-boundary reset — the long impl loop may saturate before reaching gate 4.)
 
 4. [e2e-loop](./impl/e2e-loop.md) — FINAL pass. Automate the REGRESSION (cross-slice) test-cases now that the whole feature exists. Run the full accumulated suite.
    - **HARD GATE 4 — E2E suite green → post-implementation.** Full suite must pass.
 
-**After GATE 4, before GATE 5:** Flush prd.json + progress.txt to disk (ensure state is persisted). Then check context again. If ≥ 65%, write handoff + end session — do NOT enter the live verification loop. Playwright verification is the highest-token-growth phase (see BR-PLAYWRIGHT-01 in constitution); starting at ≥ 65% risks compaction mid-flow.
+**→ UNCONDITIONAL gate reset (after GATE 4, before GATE 5).** Flush prd.json + progress.txt, write handoff + end session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Verification starts fresh. Rationale: gate 4 just ran the full regression suite (high token cost) and Playwright verification ahead is the highest-token-growth phase (BR-PLAYWRIGHT-01); a guaranteed clean break here is worth the re-bootstrap.
 
 5. [verification](./impl/verification.md) — gate 5.
    - **HARD GATE 5 — verification-before-completion.** Full suite re-run (all tests) + live exercise via `/run` + `/verify` + every PRD acceptance criterion ticked. Passing = implementation done.
+
+**→ UNCONDITIONAL gate reset (after GATE 5).** Checkpoint + end session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Post-implementation starts fresh. This feeds the fresh-context review naturally: review.md already requires a clean reviewer with no impl-loop baggage.
 
 ---
 
@@ -119,7 +121,8 @@ Hard gates need explicit human consent and surface as a red-flags line in their 
 ## Cross-cutting
 
 - **Checkpoint at 65% context** — [context-checkpoint](./cross/context-checkpoint.md): write handoff doc + prd.json + progress.txt (caveman:ultra), then end the session.
-- **Gate-boundary context check** — Before entering GATE 4 and GATE 5, check context. If ≥ 65%, checkpoint instead of entering the gate. Rationale: high-cost phases (regression suite, Playwright verification) can add 30–90K tokens; entering them in a saturated context causes compaction mid-flow.
+- **Unconditional gate reset (gates 1, 4, 5)** — after each PHASE-BOUNDARY hard gate passes, checkpoint + end session REGARDLESS of context % (gate 1 = pre-impl→impl; gate 4 = before verification; gate 5 = impl→post-impl). Each phase starts in a fresh session — no cross-phase context contamination, deterministic. Gates 2/3 are per-slice/subagent-internal and DO NOT reset. See ADR 0014.
+- **65% in-phase net** — independent of the gate resets: within any phase, if context hits 65% mid-loop, checkpoint at the next fan-in boundary (the long impl loop may saturate before reaching gate 4). The gate resets are unconditional; the 65% net is the threshold safety valve between gates.
 - **Phase transition / fresh-session resume** — [phase-transition](./cross/phase-transition.md): read handoff → prd.json → progress.txt → invoke suggested skill. Do NOT read CONTEXT.md first (handoff carries a language summary; pull glossary on demand).
 - **ARCHITECTURE.md governance** — durable project-architecture map (schema: [architecture](./schemas/architecture.md)). Written ONLY in human phases: seeded/drafted in pre-impl (adopt, map-codebase, to-prd — human-reviewed) and amended at the post-impl human-QA gate. The automated implementation loop is READ-ONLY for it (to-issues pins from it, fan-out injects a scoped slice, quality-check checks against it). A subagent that spots architectural drift PROPOSES it in its summary; the orchestrator stages it as a `## Pending Amendment` — never edits ARCHITECTURE.md mid-loop. Same blast radius as the constitution (it shapes every future subagent), so same human-gated governance. See ADR 0013.
 - **Writing style:** generated state artifacts (progress.txt, handoff) = caveman:ultra. User-facing conversation = caveman:full. Code, commits, PRs = normal prose.
