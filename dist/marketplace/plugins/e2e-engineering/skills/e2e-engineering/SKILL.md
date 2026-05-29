@@ -9,6 +9,8 @@ Master skill. Detect phase + task type, route mode, sequence sub-skills, drive t
 
 State lives under `.e2e-engineering/` at repo root: `prd.json`, `progress.txt`, `codebase-map.md` (brownfield), `research.md` (if research ran), `test-cases/*.md`, handoff docs. Schemas: [prd.json](./schemas/prd.json.md), [progress.txt](./schemas/progress.txt.md), [codebase-map](./schemas/codebase-map.md).
 
+Durable project docs live at repo ROOT (outlive any task): `CONTEXT.md` (glossary), [constitution](./constitution.md) (generic engineering standards), `ARCHITECTURE.md` (project-specific structure + conventions — the "right route" map; schema: [architecture](./schemas/architecture.md)). ARCHITECTURE.md is written ONLY in human phases (pre-impl seed + post-impl human-QA amend); the implementation loop reads it, never writes it. See ADR 0013.
+
 **Sole-writer rule:** ONLY this orchestrator writes `prd.json` + `progress.txt`. Subagents return summaries; never touch shared state.
 
 ---
@@ -35,54 +37,62 @@ Confirm the detected entry with the user in one line before proceeding.
 
 ## Pre-implementation phase
 
-Sequence (bracketed = conditional): **grill-me → [map-codebase?] → [research?] → [prototype?] → to-prd**.
+Sequence (task-type adaptive):
 
-1. [grill-me](./pre-impl/grill-me.md) — Karpathy brainstorm loop. Stateless, one question at a time, no doc deps. Also gates whether map-codebase / research / prototype fire. Loops until user approves direction.
+**Greenfield:** grill-me → [research?] → [prototype?] → to-prd
+
+**Brownfield:** map-codebase → grill-with-docs → [research?] → [prototype?] → to-prd
+
+1. [grill-me](./pre-impl/grill-me.md) — Karpathy brainstorm loop. Greenfield only. Stateless, one question at a time, no doc deps. Loops until user approves direction.
 2. [map-codebase](./pre-impl/map-codebase.md) — brownfield only. Produces `codebase-map.md` (5 sections, scoped). Section 5 refactor candidates are WALLED.
-3. [research](./pre-impl/research.md) — only if task leans on external APIs / unfamiliar libs. Produces `research.md` (rots).
-4. [prototype](./pre-impl/prototype.md) — only if taste/UX/state-machine uncertainty needs concrete feedback. Throwaway. ui-branch or logic-branch.
-5. [to-prd](./pre-impl/to-prd.md) — convert grill-me notes into the formal PRD → writes `prd.json`. Owns its own interview step (no double-interview). Refactor-shaped stories allowed. Captures testing-decisions that become test-cases.
+3. [grill-with-docs](./impl/grill-with-docs.md) — brownfield only. Reconciles brainstorm direction + codebase-map "existing language" against CONTEXT.md glossary. Gates whether research / prototype fire.
+4. [research](./pre-impl/research.md) — only if task leans on external APIs / unfamiliar libs. Produces `research.md` (rots).
+5. [prototype](./pre-impl/prototype.md) — only if taste/UX/state-machine uncertainty needs concrete feedback. Throwaway. ui-branch or logic-branch.
+6. [to-prd](./pre-impl/to-prd.md) — convert brainstorm notes (grill-me or grill-with-docs) into the formal PRD → writes `prd.json`. Owns its own interview step (no double-interview). Refactor-shaped stories allowed. Captures testing-decisions that become test-cases.
 
 **HARD GATE 1 — PRD approved → implementation.** Present the PRD; require explicit human consent before any code. Do not proceed on silence.
 
-→ checkpoint candidate / phase transition to a fresh session.
+**→ UNCONDITIONAL gate reset.** Once consent is given, checkpoint and end the session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Implementation starts in a fresh session. Phase-boundary gates (1, 4, 5) always reset; this prevents pre-impl grilling context from contaminating the impl loop. (AFK wrapper auto-resumes on the `<e2e-checkpoint>` signal.)
 
 ---
 
 ## Implementation phase
 
-Entry: PRD approved (gate 1 passed).
+Entry: PRD approved (gate 1 passed). Language already reconciled in pre-impl (grill-with-docs for brownfield; grill-me for greenfield).
 
-1. [grill-with-docs](./impl/grill-with-docs.md) — run ONCE at entry. Reconcile PRD + (brownfield) codebase-map "existing language" against CONTEXT.md glossary. NOT per-slice.
-2. [to-issues](./impl/to-issues.md) — split PRD into vertical slices, emit the `depends_on` DAG (tracer→schema→logic→api→ui as edges), author test-case `.md` docs upfront and attach `testCases[]` per story. Output is born `ready-for-agent` (skips triage).
-3. [triage](./impl/triage.md) — only for EXTERNALLY-sourced work (bug reports, feature requests) and walled refactor candidates. Forward-flow slices skip it.
+1. [to-issues](./impl/to-issues.md) — split PRD into vertical slices, emit the `depends_on` DAG (tracer→schema→logic→api→ui as edges), author test-case `.md` docs upfront and attach `testCases[]` per story. Reads `ARCHITECTURE.md` (if present) to pin each story's `integration` decision (which existing owner/seam it extends) and to add `depends_on` edges between stories that would write the same file. Output is born `ready-for-agent` (skips triage).
+2. [triage](./impl/triage.md) — only for EXTERNALLY-sourced work (bug reports, feature requests) and walled refactor candidates. Forward-flow slices skip it.
 
 ### The loop (skill-driven, in-session — ADR 0005)
 
 Repeat until COMPLETE (all stories `status: done`):
 
 1. **Compute ready set** — stories whose `depends_on` are all `done` AND own `status: todo`.
-2. **Fan-out** — dispatch each ready story to its OWN git worktree + subagent (use EnterWorktree). Inject [constitution](./constitution.md) + the story + its testCases into each subagent. Subagent runs [tdd](./impl/tdd.md): gap-check → red-green-refactor → automate its FEATURE e2e → return SUMMARY ONLY.
+2. **Fan-out** — dispatch each ready story to its OWN git worktree + subagent (use EnterWorktree). Inject [constitution](./constitution.md) + the story (incl. its `integration` decision) + its testCases into each subagent. On brownfield (or when ARCHITECTURE.md exists), ALSO inject the story's SCOPED slice of ARCHITECTURE.md — its layer's naming + the ownership rules touching its blast radius + relevant anti-patterns — NOT the whole doc (token discipline). Subagent runs [tdd](./impl/tdd.md): gap-check → red-green-refactor → automate its FEATURE e2e → return SUMMARY ONLY.
    - **HARD GATE 2 — TDD red before green.** Each subagent must write a failing test before production code. Enforced inside tdd.md.
    - **HARD GATE 3 — debug escalation.** Subagent fails 3 fix attempts → orchestrator re-dispatches ONCE with [systematic-debugging](./impl/systematic-debugging.md) (4-phase root-cause). Still red → mark story `blocked`, append `## Blocked` in progress.txt, keep draining the ready set. Escalate to human ONLY on stall (no ready work left, or every remaining story depends on a blocked one). Emit `<e2e-stall reason="all-stories-blocked" />` before escalating.
-3. **Fan-in (orchestrator, serial — sole writer):** for each returned summary:
-   - Per-slice review: check summary against the story spec + constitution. Drift → bounce back to the subagent, do not merge.
+3. **Fan-in (orchestrator, serial — sole writer):** for each returned summary, run the per-slice review's two ordered stages, then the merge-readiness check, then merge. The orchestrator runs all of this inline — this is the per-slice review LAYER; the fresh-context full-diff cross-slice audit stays the separate post-impl [review](./post-impl/review.md). Provenance: superpowers subagent-driven-development (two-stage review) + finishing-a-development-branch (readiness check).
+   - **Stage 1 — spec-compliance check.** Does the slice satisfy the story's acceptanceCriteria EXACTLY — no missing behavior, no extra behavior? Verdict `✅ spec-compliant` or `❌ issues found`. Issues → bounce findings back to the slice subagent, re-run stage 1 after the fix. Do NOT advance to stage 2 until spec-compliant.
+   - **Stage 2 — quality check.** Check the slice against the [constitution](./constitution.md) AND (when ARCHITECTURE.md exists) its ownership/naming/integration rules — caught here: a new class at a URL an existing class owns, a file that duplicates an existing component name, a second API-client key for one endpoint, a naming-convention break. Triage findings Critical / Important / Minor. Critical or Important → bounce back, re-run stage 2 after the fix. Minor → note, don't block. Do NOT advance to merge-readiness until stage 2 clears.
+   - **Merge-readiness check.** Worktree has no uncommitted changes; the slice's feature E2E + affected tests pass; branch is ahead of baseBranch. Any fail → bounce back, do not merge.
    - Merge the worktree branch into baseBranch. Resolve conflicts (never discard work).
    - Write `status: done` in prd.json.
-   - Append a `## Story Log` line to progress.txt. Stage durable learnings under `## Pending Amendments`.
+   - Append a `## Story Log` line to progress.txt. Stage durable learnings under `## Pending Amendments` (constitution OR ARCHITECTURE.md amendments — both ride this chain).
 4. **Checkpoint** if context ≥ 65% (see Cross-cutting). Then loop.
 
 ### After COMPLETE
 
-**Before GATE 4:** Check context. If ≥ 65%, write handoff + flush prd.json + progress.txt + end session per [context-checkpoint](./cross/context-checkpoint.md). Do not start the regression suite in a saturated context.
+**Before GATE 4 (65% in-phase net):** Check context. If ≥ 65%, write handoff + flush prd.json + progress.txt + end session per [context-checkpoint](./cross/context-checkpoint.md). Do not start the regression suite in a saturated context. (This is the threshold net, not a phase-boundary reset — the long impl loop may saturate before reaching gate 4.)
 
 4. [e2e-loop](./impl/e2e-loop.md) — FINAL pass. Automate the REGRESSION (cross-slice) test-cases now that the whole feature exists. Run the full accumulated suite.
    - **HARD GATE 4 — E2E suite green → post-implementation.** Full suite must pass.
 
-**After GATE 4, before GATE 5:** Flush prd.json + progress.txt to disk (ensure state is persisted). Then check context again. If ≥ 65%, write handoff + end session — do NOT enter the live verification loop. Playwright verification is the highest-token-growth phase (see BR-PLAYWRIGHT-01 in constitution); starting at ≥ 65% risks compaction mid-flow.
+**→ UNCONDITIONAL gate reset (after GATE 4, before GATE 5).** Flush prd.json + progress.txt, write handoff + end session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Verification starts fresh. Rationale: gate 4 just ran the full regression suite (high token cost) and Playwright verification ahead is the highest-token-growth phase (BR-PLAYWRIGHT-01); a guaranteed clean break here is worth the re-bootstrap.
 
 5. [verification](./impl/verification.md) — gate 5.
    - **HARD GATE 5 — verification-before-completion.** Full suite re-run (all tests) + live exercise via `/run` + `/verify` + every PRD acceptance criterion ticked. Passing = implementation done.
+
+**→ UNCONDITIONAL gate reset (after GATE 5).** Checkpoint + end session per [context-checkpoint](./cross/context-checkpoint.md) — regardless of context %. Post-implementation starts fresh. This feeds the fresh-context review naturally: review.md already requires a clean reviewer with no impl-loop baggage.
 
 ---
 
@@ -115,6 +125,8 @@ Hard gates need explicit human consent and surface as a red-flags line in their 
 ## Cross-cutting
 
 - **Checkpoint at 65% context** — [context-checkpoint](./cross/context-checkpoint.md): write handoff doc + prd.json + progress.txt (caveman:ultra), then end the session.
-- **Gate-boundary context check** — Before entering GATE 4 and GATE 5, check context. If ≥ 65%, checkpoint instead of entering the gate. Rationale: high-cost phases (regression suite, Playwright verification) can add 30–90K tokens; entering them in a saturated context causes compaction mid-flow.
+- **Unconditional gate reset (gates 1, 4, 5)** — after each PHASE-BOUNDARY hard gate passes, checkpoint + end session REGARDLESS of context % (gate 1 = pre-impl→impl; gate 4 = before verification; gate 5 = impl→post-impl). Each phase starts in a fresh session — no cross-phase context contamination, deterministic. Gates 2/3 are per-slice/subagent-internal and DO NOT reset. See ADR 0014.
+- **65% in-phase net** — independent of the gate resets: within any phase, if context hits 65% mid-loop, checkpoint at the next fan-in boundary (the long impl loop may saturate before reaching gate 4). The gate resets are unconditional; the 65% net is the threshold safety valve between gates.
 - **Phase transition / fresh-session resume** — [phase-transition](./cross/phase-transition.md): read handoff → prd.json → progress.txt → invoke suggested skill. Do NOT read CONTEXT.md first (handoff carries a language summary; pull glossary on demand).
+- **ARCHITECTURE.md governance** — durable project-architecture map (schema: [architecture](./schemas/architecture.md)). Written ONLY in human phases: seeded/drafted in pre-impl (adopt, map-codebase, to-prd — human-reviewed) and amended at the post-impl human-QA gate. The automated implementation loop is READ-ONLY for it (to-issues pins from it, fan-out injects a scoped slice, quality-check checks against it). A subagent that spots architectural drift PROPOSES it in its summary; the orchestrator stages it as a `## Pending Amendment` — never edits ARCHITECTURE.md mid-loop. Same blast radius as the constitution (it shapes every future subagent), so same human-gated governance. See ADR 0013.
 - **Writing style:** generated state artifacts (progress.txt, handoff) = caveman:ultra. User-facing conversation = caveman:full. Code, commits, PRs = normal prose.

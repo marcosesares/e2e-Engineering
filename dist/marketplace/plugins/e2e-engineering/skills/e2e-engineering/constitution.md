@@ -1,6 +1,8 @@
 # Constitution — v1
 
-Standing contract for how code and tests are written in this project. Injected into every implementation subagent so all parallel slices share identical rails. Distinct from CONTEXT.md (glossary) and ADRs (point-in-time decisions). Versioned: bump the version line and append to the changelog when amendments are promoted at the human-QA gate.
+Standing contract for how code and tests are written in this project. Injected into every implementation subagent so all parallel slices share identical rails. Distinct from CONTEXT.md (glossary), ADRs (point-in-time decisions), and ARCHITECTURE.md (project-specific structure + conventions). Versioned: bump the version line and append to the changelog when amendments are promoted at the human-QA gate.
+
+**Boundary vs ARCHITECTURE.md:** this doc holds GENERIC, cross-project engineering standards (test-first, real-interface tests, simplicity). Project-specific rules — which class owns a URL path, file naming patterns, integration conventions — live in ARCHITECTURE.md, not here. A learning that's generic promotes here; one that's specific to this project's structure promotes to ARCHITECTURE.md (human routes it at the QA gate).
 
 ## Coding principles (karpathy)
 

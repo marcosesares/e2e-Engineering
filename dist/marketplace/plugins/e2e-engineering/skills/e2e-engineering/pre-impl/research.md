@@ -1,6 +1,6 @@
 # research — conditional
 
-Fires only when the task leans on external APIs / unfamiliar libs / unknown protocols. grill-me gates it. Skipped cleanly when not needed. Produces `.e2e-engineering/research.md`: sprint-lifetime cache, MAY ROT — flag it stale-able.
+Fires only when the task leans on external APIs / unfamiliar libs / unknown protocols. The brainstorm phase (grill-me for greenfield, grill-with-docs for brownfield) gates it. Skipped cleanly when not needed. Produces `.e2e-engineering/research.md`: sprint-lifetime cache, MAY ROT — flag it stale-able.
 
 ## What to do
 - Investigate the specific external surface the task depends on: API contracts, lib capabilities/limits, auth, rate limits, version constraints, gotchas.

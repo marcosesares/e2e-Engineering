@@ -19,9 +19,17 @@ Section 5 is SURFACE-ONLY and WALLED:
 - EXCLUDE them from slice-subagent context. The orchestrator enforces this.
 - Never action them in this task. Protects scope discipline (constitution testing principle 4).
 
+## Reconcile against ARCHITECTURE.md
+While mapping, compare what the code actually does against `ARCHITECTURE.md` (the durable project structure + conventions, if it exists):
+- Code matches the doc → nothing to do.
+- Code reveals a convention the doc DOESN'T cover, or the doc is stale → PROPOSE the addition/correction for human review (pre-impl is a human-write phase for ARCHITECTURE.md). Seed it here so to-issues + fan-out steer slices correctly.
+- No ARCHITECTURE.md yet (greenfield, or pre-adopt) → seed the relevant sections from what you find, human-reviewed.
+Section 4 stays language-only (terms); structure/ownership/naming live in ARCHITECTURE.md, not here.
+
 ## Outputs feed
 - Section 4 → [grill-with-docs](../impl/grill-with-docs.md) (language reconciliation).
 - Sections 1-3 → [to-issues](../impl/to-issues.md) (slices respect existing seams).
+- ARCHITECTURE.md proposals → human review → durable conventions to-issues/fan-out/quality-check rely on.
 
 ## Red flags (stop)
 - Producing global reverse-engineering artifacts (full C4 context/container/component, ERD, spec-impact matrix). Too heavy, rots fast — forbidden.

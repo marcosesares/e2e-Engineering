@@ -20,6 +20,7 @@ Structured state for one Task. Written and owned by the orchestrator (sole write
       "status": "todo | done | blocked",
       "branch": "string — worktree branch for this slice",
       "testCases": ["test-case-id", "..."],
+      "integration": "string — brownfield ownership/seam decision pinned by to-issues from ARCHITECTURE.md §1-2, e.g. 'extend EnrollmentResource — completion endpoints, no new class'. Empty for greenfield / no ARCHITECTURE.md. Injected into the slice subagent at fan-out so it extends the named owner instead of guessing.",
       "notes": "string — free, e.g. blocked reason, gap-check escalation"
     }
   ]
@@ -33,3 +34,4 @@ Structured state for one Task. Written and owned by the orchestrator (sole write
 - **Ready set** = stories whose `depends_on` are all `done` AND own `status` is `todo`.
 - Subagents NEVER write this file. They return a summary; the orchestrator writes `status` at fan-in.
 - `testCases[]` ids point at `.md` test-case docs authored upfront by to-issues.
+- `integration` is set by to-issues (reading ARCHITECTURE.md), not by the subagent. It is the single place the brownfield ownership decision is made — once, by the orchestrator — so parallel subagents don't each guess differently. See ADR 0013.

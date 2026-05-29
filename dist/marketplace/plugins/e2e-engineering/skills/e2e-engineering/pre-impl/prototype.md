@@ -1,6 +1,6 @@
 # prototype — conditional
 
-Fires when taste/UX or state-machine uncertainty needs concrete feedback. grill-me gates it AND picks the branch. THROWAWAY experiment — NOT the final implementation. Provenance: mattpocock ui/logic split (different feedback loops).
+Fires when taste/UX or state-machine uncertainty needs concrete feedback. The brainstorm phase (grill-me for greenfield, grill-with-docs for brownfield) gates it AND picks the branch. THROWAWAY experiment — NOT the final implementation. Provenance: mattpocock ui/logic split (different feedback loops).
 
 ## Branch: ui
 For visual / UX / interaction uncertainty.
@@ -16,7 +16,7 @@ For state-machine / algorithm / terminal-app uncertainty.
 
 ## Rules
 - Throwaway. Do NOT carry prototype code into implementation. Its output is *understanding*, not artifacts.
-- Feed conclusions back into grill-me notes / to-prd.
+- Feed conclusions back into brainstorm notes for to-prd conversion.
 
 ## Red flags (stop)
 - Polishing the prototype as if it were production.

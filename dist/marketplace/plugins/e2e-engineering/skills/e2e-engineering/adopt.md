@@ -6,6 +6,7 @@ Invoked via `/e2e-engineering adopt`. ONE-TIME, separate from the per-task flow.
 Auto-DRAFT the standards scaffolding from existing code + docs, present for human review/edit — do NOT silently commit.
 - **CONTEXT.md** — draft a glossary from the domain language already in the code.
 - **constitution.md** — draft coding + testing standards reflecting how the project already works (seed from the karpathy + qa defaults, adjust to observed reality).
+- **ARCHITECTURE.md** — draft the project's structure + conventions from the existing code (5 sections: layering, ownership rules, naming, integration patterns, anti-patterns — schema: [architecture](./schemas/architecture.md)). This is the "right route" map every future slice subagent is steered by; a wrong draft propagates everywhere, so human review is mandatory.
 - **ADRs** — draft `docs/adr/*` capturing the load-bearing decisions already embedded in the code.
 
 Present each for human review/edit. Reason for the human gate: an incorrect glossary or constitution gets injected into EVERY future subagent, propagating wrong domain language everywhere. Documentation conforms immediately — but only after review.

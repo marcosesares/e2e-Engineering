@@ -1,6 +1,6 @@
 # grill-me — pre-impl brainstorm loop
 
-Karpathy-style brainstorm. Stateless, one question at a time, NO external doc dependencies (distinct from grill-with-docs, which needs existing docs). Drives the Pre-implementation loop. Loops until the user approves the direction. Provenance: mattpocock grill + superpowers brainstorming gate.
+Karpathy-style brainstorm. Greenfield only. Stateless, one question at a time, NO external doc dependencies (distinct from grill-with-docs, which reconciles against existing docs/codebase for brownfield). Loops until the user approves the direction. Provenance: mattpocock grill + superpowers brainstorming gate.
 
 ## What to do
 
@@ -16,14 +16,16 @@ Interview the user relentlessly about the idea until you reach a shared, concret
 
 Before exiting, decide and record (in the notes) which conditional steps fire:
 
-- **map-codebase?** — YES if the task targets existing code (brownfield: feature/bugfix/refactor). NO for greenfield.
 - **research?** — YES if the task leans on external APIs / unfamiliar libs / unknown protocols. Else NO.
 - **prototype?** — YES if there is taste/UX or state-machine uncertainty that needs concrete feedback. Pick the branch: **ui** (visual variants) or **logic** (state machine / terminal). Else NO.
+
+(map-codebase is predetermined by the orchestrator: greenfield = no, brownfield = yes. grill-me only runs for greenfield.)
 
 ## Exit
 User approves the direction → hand caveman:ultra notes + the conditional-step decisions to the orchestrator, which sequences map-codebase / research / prototype / to-prd.
 
 ## Red flags (stop)
+- Running grill-me for brownfield (use grill-with-docs instead; it reconciles brainstorm against existing code/docs).
 - Building anything here — this is brainstorm only.
-- Asking a question the codebase already answers.
+- Asking a question the codebase already answers (greenfield → no codebase, but don't ask about things the user just said).
 - Moving on while the user is still uncertain about the core direction.
