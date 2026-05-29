@@ -26,7 +26,14 @@ _Avoid_: "task" (reserved for business-level unit), "story" (implementation-phas
 
 **Soft gate**: Checkpoint overridable with logged justification — coverage %, lint, style. Override is allowed; silent skip is not.
 
-**Per-slice review**: In-loop, orchestrator-run. Checks a subagent's summary against the story's spec + [[constitution]] before writing `passes: true`. Cheap, incremental, catches slice-level drift early. Not a fresh-context review.
+**Per-slice review**: In-loop, orchestrator-run umbrella for two ordered stages at fan-in — [[spec-compliance check]] then [[quality check]] — followed by the [[merge-readiness check]] before merge. Checks a subagent's summary against the story's spec + [[constitution]] (+ [[ARCHITECTURE.md]] when present) before writing `status: done`. Cheap, incremental, catches slice-level drift early. Not a fresh-context review. Adapted from superpowers subagent-driven-development's two-stage review.
+_Avoid_: calling the stages "gates" (the five [[hard gate]]s are a closed set; these stages are not hard gates).
+
+**Spec-compliance check** (per-slice review stage 1): Does the slice satisfy the story's acceptanceCriteria EXACTLY — no missing behavior, no extra behavior? Verdict `✅ spec-compliant` / `❌ issues found`. Issues → bounce back to the subagent, re-run after fix. Must pass before [[quality check]]. From superpowers SDD spec-compliance reviewer.
+
+**Quality check** (per-slice review stage 2): Slice checked against the [[constitution]] AND (when present) [[ARCHITECTURE.md]] ownership/naming/integration rules — catches a new class at a URL an existing class owns, a duplicate component file, a second API-client key for one endpoint, a naming break. Findings triaged Critical / Important / Minor; Critical/Important bounce back, Minor noted. Runs only after [[spec-compliance check]] passes. From superpowers SDD code-quality reviewer.
+
+**Merge-readiness check**: Pre-merge gate (mechanical, not judgment) at fan-in after the two review stages: worktree has no uncommitted changes, the slice's feature E2E + affected tests pass, branch is ahead of baseBranch. Any fail → bounce back, do not merge. From superpowers finishing-a-development-branch readiness check. Distinct from [[verification-before-completion]] (gate 5): that's whole-feature + full-suite + live exercise; this is per-slice + narrow + at fan-in.
 
 **Post-impl review**: Fresh-context, full-diff audit by a clean reviewer (no impl-loop baggage). Targets cross-slice architecture, seams, whole-feature spec/standards compliance that [[per-slice review]] structurally can't see. Findings ranked by severity. Maps to superpowers requesting/receiving-code-review.
 
@@ -47,8 +54,13 @@ _Avoid_: reading `CONTEXT.md` first (handoff doc already contains domain languag
 
 **Disposition** (lite): A Test case is **Automated** (covered by an E2E test) or **Manual** (walked by a human). The Manual set is the post-implementation human-QA script. Borrowed from qa_skills dispositions, stripped of ADO coverage fields.
 
-**Constitution**: Single versioned standards doc = karpathy coding guidelines (think-before-coding, simplicity-first, surgical-changes, goal-driven-execution) + qa [[testing principles]]. Injected into every implementation subagent so all slices share the same rails. The static "how we write code/tests here" contract. Distinct from CONTEXT.md (glossary) and ADRs (decisions). See ADR 0008.
-_Avoid_: putting these rules in CLAUDE.md (mixes with setup, unversioned, not harness-agnostic)
+**Constitution**: Single versioned standards doc = karpathy coding guidelines (think-before-coding, simplicity-first, surgical-changes, goal-driven-execution) + qa [[testing principles]]. Injected into every implementation subagent so all slices share the same rails. The static "how we write code/tests here" contract — GENERIC, cross-project. Distinct from CONTEXT.md (glossary), ADRs (decisions), and [[ARCHITECTURE.md]] (project-specific structure). See ADR 0008.
+_Avoid_: putting these rules in CLAUDE.md (mixes with setup, unversioned, not harness-agnostic); putting project-specific structure/ownership/naming here (that's [[ARCHITECTURE.md]])
+
+**ARCHITECTURE.md**: Durable, repo-root project-architecture map — project-SPECIFIC structure + conventions (5 sections: layering/boundaries, ownership rules, naming, integration patterns, anti-patterns). The "right route" map: to-issues pins each story's [[integration decision]] from it, fan-out injects a scoped slice into each subagent, [[quality check]] checks against it. Lazy-created; written ONLY in human phases (pre-impl seed via adopt/map-codebase/to-prd; post-impl human-QA amend); the implementation loop is READ-ONLY for it. Same blast radius as [[constitution]] → same human-gated governance. Synthesized current state; ADRs are the changelog behind it. See ADR 0013.
+_Avoid_: generic standards (→ [[constitution]]); glossary terms (→ CONTEXT.md); a pile of decisions (→ ADRs); per-task scope (→ [[map-codebase]] codebase-map.md); subagents/orchestrator writing it mid-loop
+
+**Integration decision**: Per-story field in prd.json set by to-issues (reading [[ARCHITECTURE.md]] §1-2) — which existing owner/seam the story extends, e.g. "extend EnrollmentResource, no new class". The single place the brownfield ownership decision is made — once, by the orchestrator — then injected into the slice subagent at fan-out so N parallel subagents don't each guess differently. Empty for greenfield / no ARCHITECTURE.md. Fixes the reverted-incident root cause (parallel subagents inventing a duplicate resource class).
 
 **Testing principles**: General testing standards absorbed from qa_skills (BR-PL-01..06): real-interface interaction (UI clicks / HTTP, not property poking) for actions; diagnosable failures over silent catch; no hardcoded sleeps when a wait condition exists; scope discipline (no "while I'm here" fixes); readability over defensive coding in test code.
 
@@ -73,7 +85,7 @@ _Avoid_: confusing with "grill-with-docs" (grill-with-docs requires existing doc
 
 **triage** (sub-skill): 5-state intake machine (needs-triage → needs-info → ready-for-agent / ready-for-human / won't-fix). In e2e-engineering's forward flow, to-issues output is born `ready-for-agent` and SKIPS triage. triage gates only EXTERNALLY-sourced work (bug reports, feature requests) and walled [[refactor candidates]] from map-codebase. Preserves "never AFK an un-triaged issue" where it matters.
 
-**map-codebase** (sub-skill): Conditional pre-impl step — fires only on brownfield (task targets existing code). Produces `codebase-map.md`, SCOPED to *this* change (sprint-lifetime, can rot like [[Research]]), with 5 sections: (1) blast-radius modules, (2) seams/adapters (where tests attach), (3) local impact list, (4) existing language (fed to grill-with-docs to reconcile with CONTEXT.md), (5) refactor candidates. NOT a global C4/ERD/NxN matrix. See ADR 0009.
+**map-codebase** (sub-skill): Conditional pre-impl step — fires only on brownfield (task targets existing code). Produces `codebase-map.md`, SCOPED to *this* change (sprint-lifetime, can rot like [[Research]]), with 5 sections: (1) blast-radius modules, (2) seams/adapters (where tests attach), (3) local impact list, (4) existing language — terms only, fed to grill-with-docs (durable structure/ownership/naming live in [[ARCHITECTURE.md]], NOT §4), (5) refactor candidates. Also reconciles the code against [[ARCHITECTURE.md]] and proposes additions/corrections for human review. NOT a global C4/ERD/NxN matrix. See ADR 0009.
 _Avoid_: full C4/ERD/spec-impact matrices (too heavy, rots per slice); the global reverse-engineering artifacts the prototypes were studied with
 
 **Refactor candidates** (map section 5): Shallow modules, missing seams, duplicated rules surfaced during map-codebase. SURFACE-ONLY and WALLED: tagged `NOT THIS TASK`, routed to NEW issues via triage, human-gated into their own refactor Task, and EXCLUDED from slice-subagent context. The wall protects scope discipline ([[testing principles]] BR-PL-02); orchestrator enforces it. README "de-slop" = a refactor Task fed by these candidates, never an AFK whole-repo refactor.
@@ -122,7 +134,8 @@ _Avoid_: "ralph loop", "ralph.sh", "session manager"
 - **E2E gate** is exit condition for **Implementation** loop (not just post-impl)
 - **Implementation** loop dispatches the [[ready set]] from the depends_on DAG to parallel subagents; orchestrator is [[sole writer]] of prd.json + progress.txt at fan-in
 - Every implementation subagent is injected with the [[constitution]]
-- **Post-implementation** human-QA gate is the single human-approval chokepoint: clears QA sign-off AND [[pending amendment]]s to the constitution in one touch
+- **Post-implementation** human-QA gate is the single human-approval chokepoint: clears QA sign-off AND [[pending amendment]]s in one touch — human routes each amendment to [[constitution]] (generic) or [[ARCHITECTURE.md]] (project-specific) or drops it
+- **[[ARCHITECTURE.md]]** is read by to-issues (pins [[integration decision]]), fan-out (scoped slice per subagent), and [[quality check]]; written only in human phases (pre-impl seed, post-impl amend) — never by the implementation loop
 - **grill-me** drives **Pre-implementation** loop; output = caveman:ultra notes handed to **to-prd**
 - **to-prd** converts grill-me notes into formal PRD; owns its own interview step (no double-interview)
 - **grill-with-docs** drives **Implementation** loop start (CONTEXT.md + ADRs already exist at this point)

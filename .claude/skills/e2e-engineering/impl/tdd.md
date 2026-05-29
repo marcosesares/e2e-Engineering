@@ -1,6 +1,6 @@
 # tdd — SLICE SUBAGENT
 
-Runs INSIDE a fan-out subagent, in its own git worktree, for ONE story. Receives: the [constitution](../constitution.md), the story (acceptanceCriteria, sliceType, depends_on), and its feature test-cases. Returns a SUMMARY ONLY — never writes prd.json/progress.txt (orchestrator is sole writer). Provenance: mattpocock tdd + superpowers subagent-driven-development.
+Runs INSIDE a fan-out subagent, in its own git worktree, for ONE story. Receives: the [constitution](../constitution.md), the story (acceptanceCriteria, sliceType, depends_on, `integration` decision), its feature test-cases, and — brownfield — a SCOPED slice of ARCHITECTURE.md (this layer's naming + the ownership rules touching this blast radius + relevant anti-patterns). Follow the `integration` decision and those conventions: EXTEND the named owner, match the naming pattern — do not invent a parallel class/file. Returns a SUMMARY ONLY — never writes prd.json/progress.txt/ARCHITECTURE.md (orchestrator is sole writer; ARCHITECTURE.md is human-phase-only). Provenance: mattpocock tdd + superpowers subagent-driven-development.
 
 ## Sequence
 
@@ -27,6 +27,7 @@ If a fix fails 3 times, STOP. Do not blind-retry. Return to the orchestrator rep
 - Tests added (with test-case ids) + red→green evidence.
 - Any constitution tensions / scope pressure resisted.
 - Durable learnings (candidate Pending Amendments).
+- **Architecture drift PROPOSED** — if you hit a convention ARCHITECTURE.md doesn't cover, or one that looks wrong, say so here. Do NOT edit ARCHITECTURE.md — the orchestrator stages it; the human decides at the QA gate.
 - Blockers / gap-check escalations.
 Keep it tight — the orchestrator reads summaries, not raw churn.
 
@@ -37,3 +38,5 @@ Keep it tight — the orchestrator reads summaries, not raw churn.
 - Writing prd.json / progress.txt (sole-writer violation).
 - Automating regression/cross-slice journeys here (not this subagent's job).
 - Testing internal state instead of real interfaces (constitution testing principle 1).
+- Creating a parallel class/file when the `integration` decision or ARCHITECTURE.md names an existing owner to extend.
+- Editing ARCHITECTURE.md (human-phase-only; propose drift in the summary instead).
