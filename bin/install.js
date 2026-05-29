@@ -73,8 +73,10 @@ function requireDist(rel) {
 }
 
 function installAfkWrapper(dest, opts, written) {
-  const src = requireDist("afk.ps1");
-  copyRecursive(src, path.join(dest, "scripts", "afk.ps1"), opts, written);
+  // Cross-platform driver: ship both. .ps1 required (Windows-first); .sh best-effort.
+  copyRecursive(requireDist("afk.ps1"), path.join(dest, "scripts", "afk.ps1"), opts, written);
+  const sh = path.join(DIST, "afk.sh");
+  if (fs.existsSync(sh)) copyRecursive(sh, path.join(dest, "scripts", "afk.sh"), opts, written);
 }
 
 function installClaude(dest, opts, written) {

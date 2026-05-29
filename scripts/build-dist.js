@@ -49,14 +49,20 @@ function main() {
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
 
-  // afk wrapper — copy to dist root so install.js can distribute it
-  const afkSrc = path.join(REPO, "scripts", "afk.ps1");
-  const afkDst = path.join(REPO, "dist", "afk.ps1");
-  if (fs.existsSync(afkSrc)) {
-    fs.copyFileSync(afkSrc, afkDst);
-    process.stdout.write("build-dist: copied afk.ps1 → " + path.relative(REPO, afkDst) + "\n");
-  } else {
-    process.stderr.write("build-dist: WARNING — scripts/afk.ps1 not found, skipping\n");
+  // afk driver (cross-platform) — distribute to two places:
+  //   dist/<name>            so install.js (npx init) can place it in client scripts/
+  //   <plugin>/<name>        so marketplace / `/plugin install` clients get the driver too
+  for (const name of ["afk.ps1", "afk.sh"]) {
+    const afkSrc = path.join(REPO, "scripts", name);
+    if (!fs.existsSync(afkSrc)) {
+      process.stderr.write("build-dist: WARNING — scripts/" + name + " not found, skipping\n");
+      continue;
+    }
+    const distDst = path.join(REPO, "dist", name);
+    const pluginDst = path.join(PLUGIN_DIR, name);
+    fs.copyFileSync(afkSrc, distDst);
+    fs.copyFileSync(afkSrc, pluginDst);
+    process.stdout.write("build-dist: copied " + name + " → dist/ + plugin/\n");
   }
 
   const count = countFiles(PLUGIN_SKILLS);
