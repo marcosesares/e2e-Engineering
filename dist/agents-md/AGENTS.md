@@ -11,6 +11,8 @@ When the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "implemen
 - `test-cases/*.md` — one per behavior, authored upfront.
 - `constitution.md` — coding + testing standards (below). Re-read before each slice.
 
+Write every artifact to its final location directly — never to a temp/base spot and copy later (that leaves dirty duplicates).
+
 ## prd.json schema
 ```json
 { "project": "", "description": "", "taskType": "greenfield|feature|bugfix|refactor",
@@ -26,11 +28,10 @@ COMPLETE = every story `status: "done"`.
 
 ## Phase 1 — Pre-implementation  (idea → approved PRD)
 
-1. **Grill the idea.** Ask ONE question at a time; wait for each answer. Walk the design tree. Recommend an answer per question. If the codebase answers a question, read it instead of asking. Decide which conditional steps fire:
-   - map-codebase? → YES if editing existing code (brownfield).
+1. **map-codebase FIRST** (brownfield only — editing existing code) → write `codebase-map.md`, 5 sections: blast-radius modules · seams (where tests attach) · local impact · existing language · refactor candidates **[NOT THIS TASK — walled, never actioned in this task]**. Runs before grilling so your questions are informed by what already exists. Greenfield skips this.
+2. **Grill the idea (doc-aware).** First read what exists — `codebase-map.md` (brownfield), any project glossary / architecture notes — so you never ask what the code already answers. Then ask ONE question at a time; wait for each answer. Walk the design tree. Recommend an answer per question. Reconcile terminology AS YOU GO: when a term clashes with the code's or glossary's existing term, surface it and pin ONE canonical term. Decide which remaining conditional steps fire:
    - research? → YES if external API / unfamiliar lib.
    - prototype? → YES if UX/state-machine uncertainty (throwaway).
-2. **map-codebase** (brownfield only) → write `codebase-map.md`, 5 sections: blast-radius modules · seams (where tests attach) · local impact · existing language · refactor candidates **[NOT THIS TASK — walled, never actioned in this task]**.
 3. **research** (if needed) → write `research.md` (may rot; version-pin facts).
 4. **prototype** (if needed) → throwaway spike; ui (visual) or logic (state machine). Keep the understanding, discard the code.
 5. **Write the PRD** → `prd.json`. Refactor-shaped stories allowed (behavior-preservation + structural goal). Capture testing-decisions per story (feature vs regression shape) → these become test-case `.md` files.
@@ -41,8 +42,7 @@ COMPLETE = every story `status: "done"`.
 
 ## Phase 2 — Implementation  (PRD → working code + green tests)
 
-1. **Reconcile language** (once): compare PRD terms + (brownfield) code terms against any project glossary; resolve conflicts before slicing.
-2. **Slice + DAG.** Split PRD into vertical slices ordered tracer → schema → logic → api → ui. Encode the ordering as `depends_on` edges. Author test-case `.md` files upfront from testing-decisions; attach `testCases[]` per story. Set every story `status: todo`.
+1. **Slice + DAG.** (Language was already reconciled during the doc-aware grill — don't re-grill.) Split PRD into vertical slices ordered tracer → schema → logic → api → ui. Encode the ordering as `depends_on` edges. Author test-case `.md` files upfront from testing-decisions; attach `testCases[]` per story. Set every story `status: todo`.
 
 ### Sequential slice loop
 Repeat until COMPLETE:

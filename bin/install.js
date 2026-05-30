@@ -77,9 +77,13 @@ function installAfkWrapper(dest, opts, written) {
   copyRecursive(src, path.join(dest, "scripts", "afk.ps1"), opts, written);
 }
 
+const CLAUDE_SKILLS = ["e2e-engineering", "e2e-flight"];
+
 function installClaude(dest, opts, written) {
-  const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "skills", "e2e-engineering"));
-  copyRecursive(src, path.join(dest, ".claude", "skills", "e2e-engineering"), opts, written);
+  for (const name of CLAUDE_SKILLS) {
+    const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "skills", name));
+    copyRecursive(src, path.join(dest, ".claude", "skills", name), opts, written);
+  }
   installAfkWrapper(dest, opts, written);
 }
 

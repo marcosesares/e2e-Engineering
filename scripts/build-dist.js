@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 "use strict";
 
-// Sync the canonical e2e-engineering skill into the marketplace plugin tree.
-// Canonical source of truth: .claude/skills/e2e-engineering/
+// Sync the canonical e2e-engineering skills into the marketplace plugin tree.
+// Canonical source of truth: .claude/skills/<skill>/  (one dir per top-level skill).
+// SKILLS lists every skill the plugin ships; both must be top-level dirs so the
+// installed plugin can resolve /e2e-engineering AND /e2e-flight as commands.
 // The AGENTS.md and Cursor variants are authored/maintained by hand in dist/
 // (they are editorial flattenings, not mechanical copies) and are left untouched.
 
@@ -10,9 +12,10 @@ const fs = require("fs");
 const path = require("path");
 
 const REPO = path.resolve(__dirname, "..");
-const CANONICAL = path.join(REPO, ".claude", "skills", "e2e-engineering");
+const SKILLS_SRC = path.join(REPO, ".claude", "skills");
+const SKILLS = ["e2e-engineering", "e2e-flight"];
 const PLUGIN_DIR = path.join(REPO, "dist", "marketplace", "plugins", "e2e-engineering");
-const PLUGIN_SKILLS = path.join(PLUGIN_DIR, "skills", "e2e-engineering");
+const PLUGIN_SKILLS_ROOT = path.join(PLUGIN_DIR, "skills");
 
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
@@ -29,12 +32,16 @@ function rmrf(p) {
 }
 
 function main() {
-  if (!fs.existsSync(CANONICAL)) {
-    process.stderr.write("build-dist: canonical skill not found at " + CANONICAL + "\n");
-    process.exit(1);
+  for (const name of SKILLS) {
+    const src = path.join(SKILLS_SRC, name);
+    if (!fs.existsSync(src)) {
+      process.stderr.write("build-dist: canonical skill not found at " + src + "\n");
+      process.exit(1);
+    }
+    const dst = path.join(PLUGIN_SKILLS_ROOT, name);
+    rmrf(dst);
+    copyDir(src, dst);
   }
-  rmrf(PLUGIN_SKILLS);
-  copyDir(CANONICAL, PLUGIN_SKILLS);
 
   // sanity: required portable artifacts present
   const required = [
@@ -49,18 +56,27 @@ function main() {
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
 
-  // afk wrapper — copy to dist root so install.js can distribute it
-  const afkSrc = path.join(REPO, "scripts", "afk.ps1");
-  const afkDst = path.join(REPO, "dist", "afk.ps1");
-  if (fs.existsSync(afkSrc)) {
-    fs.copyFileSync(afkSrc, afkDst);
-    process.stdout.write("build-dist: copied afk.ps1 → " + path.relative(REPO, afkDst) + "\n");
-  } else {
-    process.stderr.write("build-dist: WARNING — scripts/afk.ps1 not found, skipping\n");
+  // afk wrappers — keep every distributed copy in sync with scripts/afk.*
+  //   dist/afk.ps1                         (install.js distributes this)
+  //   <plugin>/afk.ps1 + afk.sh            (flight Step 0 copies these into .e2e-engineering/)
+  const afkTargets = [
+    ["afk.ps1", path.join(REPO, "dist", "afk.ps1")],
+    ["afk.ps1", path.join(PLUGIN_DIR, "afk.ps1")],
+    ["afk.sh",  path.join(PLUGIN_DIR, "afk.sh")]
+  ];
+  for (const [name, dst] of afkTargets) {
+    const src = path.join(REPO, "scripts", name);
+    if (fs.existsSync(src)) {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+      process.stdout.write("build-dist: copied " + name + " → " + path.relative(REPO, dst) + "\n");
+    } else {
+      process.stderr.write("build-dist: WARNING — scripts/" + name + " not found, skipping\n");
+    }
   }
 
-  const count = countFiles(PLUGIN_SKILLS);
-  process.stdout.write("build-dist: synced " + count + " skill file(s) → " + path.relative(REPO, PLUGIN_SKILLS) + "\n");
+  const count = countFiles(PLUGIN_SKILLS_ROOT);
+  process.stdout.write("build-dist: synced " + count + " skill file(s) [" + SKILLS.join(", ") + "] → " + path.relative(REPO, PLUGIN_SKILLS_ROOT) + "\n");
 }
 
 function countFiles(dir) {
