@@ -30,7 +30,9 @@
 param(
     [ValidateSet("auto", "major", "minor", "patch")]
     [string]$Bump = "auto",
-    [string]$MarketplaceRemote = "https://github.com/marcosesares/e2e-Engineering",
+    # The marketplace is a SEPARATE standalone repo (RELEASING.md) — NOT the source
+    # repo (github.com/marcosesares/e2e-Engineering). Override with -MarketplaceRemote.
+    [string]$MarketplaceRemote = "https://github.com/marcosesares/e2e-engineering-marketplace",
     [switch]$DryRun,
     [switch]$NoGit
 )
