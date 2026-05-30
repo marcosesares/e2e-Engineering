@@ -18,8 +18,8 @@ Read env var `E2E_DRIVER`.
 - **UNSET → bootstrap mode.** A bare invocation (a human typed `/e2e-flight`, or `/e2e-engineering` called it at gate-1 approve). The driver isn't running yet.
   1. Ensure the driver exists at `.e2e-engineering/`: if `.e2e-engineering/afk.ps1` (Windows) / `afk.sh` (POSIX) is absent, copy it from the shipped bundle. Resolve the bundle location in order: installed-plugin root (`<plugin>/afk.ps1`, alongside the skill), else source repo `scripts/afk.ps1`. Both are the same script.
   2. Pick by platform: `$IsWindows` → `afk.ps1`, else `afk.sh`.
-  3. Launch detached: `Start-Process pwsh -ArgumentList '-File','.e2e-engineering/afk.ps1'` (or `bash .e2e-engineering/afk.sh &`).
-  4. Tell the user: "Flight driver running in a new window — draining N selected Tasks. Walk away."
+  3. Launch (blocking, same window): `pwsh -File '.e2e-engineering/afk.ps1'` (or `bash .e2e-engineering/afk.sh`).
+  4. Tell the user: "Flight driver running — draining N selected Tasks. Watch progress in `.e2e-engineering/` or the terminal output. This may take a while; the driver will alert you when it’s done."
   5. **Exit.** Do NOT do Task work in this session (no driver env = not a worker).
 
 - **SET (=1) → worker mode.** The driver spawned this. Proceed to bootstrap + one Task-step below.

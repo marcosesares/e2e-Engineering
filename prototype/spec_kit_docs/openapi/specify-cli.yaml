@@ -1,0 +1,257 @@
+openapi: 3.0.0
+info:
+  title: Specify CLI API
+  description: API specification for Specify CLI commands (init, extension, preset, integration, workflow, agent, catalog)
+  version: 1.0.0
+  contact:
+    name: Specify Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local CLI server (if exposed)
+
+paths:
+  /commands/init:
+    post:
+      summary: Initialize Specify project
+      operationId: init
+      tags:
+        - Project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitRequest'
+      responses:
+        '200':
+          description: Project initialized successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitResponse'
+        '400':
+          description: Invalid arguments (conflict, invalid agent, etc.)
+        '500':
+          description: Installation error
+
+  /commands/extension:
+    get:
+      summary: List installed extensions
+      operationId: listExtensions
+      tags:
+        - Extensions
+      responses:
+        '200':
+          description: List of extensions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExtensionInfo'
+    post:
+      summary: Install extension
+      operationId: installExtension
+      tags:
+        - Extensions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallExtensionRequest'
+      responses:
+        '200':
+          description: Extension installed
+        '404':
+          description: Extension not found
+
+  /commands/preset:
+    get:
+      summary: List installed presets
+      operationId: listPresets
+      tags:
+        - Presets
+      responses:
+        '200':
+          description: List of presets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PresetInfo'
+    post:
+      summary: Install preset
+      operationId: installPreset
+      tags:
+        - Presets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallPresetRequest'
+      responses:
+        '200':
+          description: Preset installed
+        '404':
+          description: Preset not found
+
+  /commands/workflow:
+    post:
+      summary: Execute workflow
+      operationId: runWorkflow
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowRunRequest'
+      responses:
+        '200':
+          description: Workflow executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowRunResponse'
+        '400':
+          description: Invalid workflow definition
+
+  /commands/workflow/{runId}/resume:
+    post:
+      summary: Resume workflow
+      operationId: resumeWorkflow
+      tags:
+        - Workflows
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workflow resumed
+        '404':
+          description: Workflow run not found
+
+components:
+  schemas:
+    InitRequest:
+      type: object
+      required:
+        - project_name
+      properties:
+        project_name:
+          type: string
+          description: Name of project directory
+        here:
+          type: boolean
+          description: Use current directory
+        force:
+          type: boolean
+          description: Skip confirmation for non-empty dir
+        integration:
+          type: string
+          enum: [claude, copilot, cursor, windsurf, gemini, codebuddy, generic]
+        preset:
+          type: string
+          description: Preset ID to install
+        script:
+          type: string
+          enum: [sh, ps]
+        no_git:
+          type: boolean
+        branch_numbering:
+          type: string
+          enum: [sequential, timestamp]
+
+    InitResponse:
+      type: object
+      properties:
+        project_path:
+          type: string
+        integration:
+          type: string
+        templatesInstalled:
+          type: integer
+        gitInitialized:
+          type: boolean
+        status:
+          type: string
+          enum: [success, cancelled]
+
+    ExtensionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        installed:
+          type: boolean
+        enabled:
+          type: boolean
+
+    PresetInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        installed:
+          type: boolean
+
+    InstallExtensionRequest:
+      type: object
+      required:
+        - extension_id
+      properties:
+        extension_id:
+          type: string
+        force:
+          type: boolean
+
+    InstallPresetRequest:
+      type: object
+      required:
+        - preset_id
+      properties:
+        preset_id:
+          type: string
+        force:
+          type: boolean
+
+    WorkflowRunRequest:
+      type: object
+      required:
+        - workflow_file
+      properties:
+        workflow_file:
+          type: string
+          description: Path to workflow YAML
+        inputs:
+          type: object
+          description: Workflow input variables
+
+    WorkflowRunResponse:
+      type: object
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+          enum: [completed, failed, paused]
+        result:
+          type: object
+        duration_ms:
+          type: integer

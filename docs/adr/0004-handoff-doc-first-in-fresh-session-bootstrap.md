@@ -1,0 +1,3 @@
+# Fresh session reads handoff doc before CONTEXT.md or prd.json
+
+When a session restarts (phase transition or 65% context checkpoint), the fresh agent reads the handoff doc before any other file. The handoff doc is designed to be self-contained for a fresh agent — it includes a domain language summary, current state, next action, artifact paths, and suggested skill. Reading CONTEXT.md first was rejected because it only provides vocabulary without orienting the agent on what to do next. Reading prd.json first was rejected because structured state without narrative context produces mis-scoped next actions. Full glossary and PRD details are pulled on-demand via paths referenced inside the handoff doc.
