@@ -1,5 +1,7 @@
 # External session-loop for Task-drain and context-reset
 
+> **SUPERSEDED by [ADR 0022](0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md) (2026-05-31).** There is no external driver, no AFK wrapper, no `E2E_DRIVER` guard, and no respawn signals. `/e2e-flight` runs in the current session and implements ONE Task per invocation, then exits; re-invoke for the next. The token fix is forced fan-out (sub-agents hold the heavy churn), not an external loop. Kept below as history only.
+
 ADR 0005 rejected an external shell driver: the loop runs in-session, the orchestrator is the driver, `ralph.sh` + `<promise>COMPLETE</promise>` are out. That decision stands — **for the impl-slice loop**. It iterates the ready set inside one session, checkpoints at 65%, and is the orchestrator's own job. Nothing here reopens that.
 
 What ADR 0005 never addressed is a higher altitude: draining **many** Tasks unattended, and surviving context resets that no in-session loop can perform on itself. A skill running inside a Claude session cannot `/clear` itself and keep executing — `/clear` wipes the very instructions doing the work. The only mechanism that yields fresh-context-then-continue is a **new process**. So the Task-to-Task drain and the at-boundary context resets must be driven from outside the session.

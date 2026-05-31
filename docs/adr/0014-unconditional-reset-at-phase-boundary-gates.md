@@ -1,5 +1,7 @@
 # Unconditional session reset at phase-boundary gates, not only at 65%
 
+> **SUPERSEDED by [ADR 0022](0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md) (2026-05-31).** No context monitoring, no 65% checkpoint, no gate-boundary reset. `/e2e-flight` does one Task per spawn; the orchestrator chain stays small via forced fan-out, not resets. Kept below as history only.
+
 The skill checkpoints when context hits 65% (ADR 0002): write a handoff, end the session, let a fresh one resume. That is a threshold net — it fires only under memory pressure. It says nothing about phase hygiene. A session that crosses from pre-implementation grilling straight into the implementation loop at 30% context carries all the brainstorming back-and-forth, the rejected directions, the half-formed phrasings — into a phase that should start from the approved PRD and nothing else. Cross-phase contamination is invisible until it produces drift.
 
 We add an **unconditional reset at the phase-boundary hard gates — 1, 4, 5 — regardless of context %**. Gate 1 (PRD approved → implementation): impl starts fresh, free of pre-impl grilling. Gate 4 (E2E suite green, before verification): the regression suite just ran and Playwright verification ahead is the highest-token phase (BR-PLAYWRIGHT-01), so a guaranteed clean break is worth the cost. Gate 5 (verification done → post-implementation): post-impl review already demands a clean reviewer with no impl-loop baggage, so the reset feeds it naturally.

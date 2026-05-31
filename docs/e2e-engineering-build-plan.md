@@ -1,5 +1,7 @@
 # e2e-engineering — Build Plan (handoff for fresh session)
 
+> **Historical build record — amended by [ADR 0022](adr/0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md) (2026-05-31).** The skill/sub-skill layout, schemas, and provenance below are still broadly accurate. REMOVED since: the in-session loop, the 65% checkpoint, the `cross/` files (`context-checkpoint.md`, `phase-transition.md`), and gate-boundary resets. Implementation now runs in [/e2e-flight](../.claude/skills/e2e-flight/SKILL.md) — one Task per spawn, no loop, no context monitoring; fan-out to slice + expert sub-agents is the only iteration. Gates 4 & 5 are STUBBED (pending E2E automation). For current truth read CONTEXT.md + ADR 0022.
+
 Design FROZEN. This doc = what to build. Read order before building:
 1. `CONTEXT.md` (glossary, ~30 terms)
 2. `docs/adr/0001`–`0012` (every fork + why)
@@ -11,7 +13,7 @@ Build the e2e-engineering skill: master orchestrator + sub-skills composing best
 ## File layout to create
 ```
 .claude/skills/e2e-engineering/
-  SKILL.md                 # orchestrator: phase+taskType detect, mode route, loop, 5 gates, checkpoint
+  SKILL.md                 # orchestrator: phase+taskType detect, mode route, 5 gates (4/5 stubbed)
   constitution.md          # karpathy coding + qa testing principles (injected into every slice subagent)
   pre-impl/
     grill-me.md            # Karpathy brainstorm loop; gates research/prototype/map-codebase
@@ -30,9 +32,7 @@ Build the e2e-engineering skill: master orchestrator + sub-skills composing best
   post-impl/
     review.md              # fresh-context full-diff cross-slice audit
     human-qa.md            # Manual test-cases script + approve pending amendments (single chokepoint)
-  cross/
-    context-checkpoint.md  # 65% -> write handoff+prd.json+progress.txt
-    phase-transition.md    # fresh-session bootstrap (read handoff->prd.json->progress.txt->skill)
+  # cross/ REMOVED (ADR 0022): no 65% checkpoint, no phase-transition reset
   schemas/                 # OR document inline in SKILL.md
     prd.json.md            # schema below
     progress.txt.md        # schema below
@@ -70,11 +70,11 @@ codebase-map.md (brownfield, sprint-lifetime, rots):
 ```
 
 ## 5 HARD gates (need human consent)
-1 PRD approved -> impl · 2 TDD red before green · 3 debug escalate (3 strikes -> systematic-debugging -> blocked -> stall->human) · 4 E2E suite green · 5 verify-before-completion
+1 PRD approved -> impl · 2 TDD red before green · 3 debug escalate (3 strikes -> systematic-debugging -> blocked -> stall->human) · 4 E2E suite green **[STUBBED — ADR 0022]** · 5 verify-before-completion **[STUBBED — ADR 0022]**
 SOFT (override+log): coverage/lint/style.
 
-## Loop (skill-driven in-session, ADR 0005)
-ready set (deps satisfied & status:todo) -> FAN-OUT to worktree subagents (+constitution) -> each: gap-check, TDD, feature-e2e, return SUMMARY -> FAN-IN (orchestrator sole writer): per-slice review, merge, status:done, append progress.txt -> repeat until all done -> e2e-loop (regression) -> gate4 -> gate5 -> post-impl.
+## Per-Task drain (flight IS the orchestrator, ADR 0022 — no loop, no checkpoint)
+ready set (deps satisfied & status:todo) -> FAN-OUT to worktree subagents (+constitution) -> each: gap-check, TDD, feature-e2e, return SUMMARY -> FAN-IN (orchestrator sole writer): per-slice expert-review, merge, status:done, append progress.txt -> repeat until DAG drained -> e2e-loop (regression authoring; gate 4 stubbed) -> self-review -> defer human-QA. One Task per `/e2e-flight` spawn, then exit; re-invoke for the next.
 
 ## Entry modes
 - phase-adaptive: greenfield/feature/bugfix/refactor (refactor = FULL flow, ADR 0012)
