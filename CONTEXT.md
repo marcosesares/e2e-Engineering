@@ -1,5 +1,14 @@
 # e2e-engineering
 
+> **ADR 0022 redesign delta (2026-05-31) — current truth overrides older entries below.**
+> - **TASK > SLICE** (pinned). **TASK** = one `/e2e-flight` spawn unit (one `queue.json` entry / `tasks/<id>/`). **SLICE / sub-task** = one fan-out sub-agent unit (one `prd.json stories[]` entry / DAG node). Older entries say "Goal" / "story" / "vertical slice" for the sub-unit — read them as SLICE.
+> - **No loop, no context monitoring.** `/e2e-flight` does ONE Task per spawn then exits; re-invoke for the next. These terms are **DEPRECATED**: [[Checkpoint]], [[Unconditional gate reset]], [[Phase transition]], [[AFK wrapper]], [[Loop driver]], [[E2E_DRIVER guard]]. The 65% hook is disabled. Supersedes ADR 0002/0014/0015.
+> - **Flight IS the orchestrator.** [[Fan-out / fan-in]] + [[Sole writer]] now run INSIDE the `/e2e-flight` spawn, not an external/separate orchestrator.
+> - **Forcing mechanism** (NEW): bootstrap `ToolSearch`-loads `Agent`+`EnterWorktree`; orchestrator doing slice-impl inline = hard STOP. The structural token fix — guarantees fan-out fires (it didn't last run → the 22.3M-token blowup).
+> - **Expert agent** (NEW): role-prompted reviewer sub-agent (`ui-designer`, `backend-architect`, `dba`, `senior-qa` in `.claude/agents/`). A second fan-out wave reviews each green slice in its worktree before merge (findings Critical/Important/Minor, bounce cap 3), and advises the PRD in pre-impl planning.
+> - **Gates 4 & 5 STUBBED** (pending E2E automation, not deleted). Interim verification net = gate 2 + gate 3 + expert review + lint/compile + self-review + human-QA checklist.
+> - See [ADR 0022](docs/adr/0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md) + [prototype/e2e-flight-process/design.md](prototype/e2e-flight-process/design.md).
+
 ## Language
 
 **e2e-engineering**: Master orchestrator skill. Detects current phase, sequences sub-skills, loops until all exit conditions met.
@@ -22,7 +31,7 @@ _Avoid_: "task" (reserved for business-level unit), "story" (implementation-phas
 
 **Loop**: Phase-specific iteration mechanism. Each phase has exactly one loop type — Karpathy brainstorm loop (pre-impl), vertical slice TDD loop (impl), review loop (post-impl).
 
-**Hard gate**: Non-negotiable checkpoint an agent cannot pass without explicit human consent. The five: (1) PRD approved → implementation, (2) TDD red phase (failing test before production code), (3) debug escalation (after 3 failed fixes, stop + escalate), (4) E2E green → post-implementation, (5) verification-before-completion before marking done. Each surfaces as a red-flags line in its sub-skill. Concept from superpowers.
+**Hard gate**: Non-negotiable checkpoint an agent cannot pass without explicit human consent. The five: (1) PRD approved → implementation, (2) TDD red phase (failing test before production code), (3) debug escalation (after 3 failed fixes, stop + escalate), (4) E2E green → post-implementation, (5) verification-before-completion before marking done. Each surfaces as a red-flags line in its sub-skill. Concept from superpowers. _(ADR 0022: gates 4 & 5 are STUBBED pending E2E automation — not deleted; interim net = expert review + lint/compile + self-review + human-QA checklist.)_
 
 **Soft gate**: Checkpoint overridable with logged justification — coverage %, lint, style. Override is allowed; silent skip is not.
 
@@ -39,12 +48,12 @@ _Avoid_: calling the stages "gates" (the five [[hard gate]]s are a closed set; t
 
 **Verification-before-completion** (hard gate 5): Final impl-phase check after E2E green (gate 4). Distinct from gate 4: gate 4 = automated E2E suite green; gate 5 = full suite re-run (all tests, not just changed slices) + live exercise of the feature (browser for UI, per run/verify skills) + every PRD acceptance criterion ticked. Catches what automated E2E misses — visual/interaction regressions, criteria not encoded as tests. Passing = implementation done → hand to post-impl. Wired to existing harness skills: invokes /run (launch app) + /verify (exercise + observe), then adds the PRD acceptance-criteria checklist on top — does not reimplement app-launching.
 
-**Checkpoint**: Snapshot saved + session ended so a fresh one resumes cleanly. Three files: handoff doc (narrative), `prd.json` (structured state), `progress.txt` (append-only learnings). Written in caveman:ultra. Two triggers: (1) **65% threshold** — in-phase safety net, flag-and-wait to next fan-in boundary; (2) **[[unconditional gate reset]]** — at phase-boundary gates 1/4/5, fire regardless of %. Signal carries `reason="threshold"` or `reason="gate-N"`. See ADR 0002, 0014.
+**Checkpoint** _[DEPRECATED — ADR 0022; no context monitoring, 65% hook disabled]_: Snapshot saved + session ended so a fresh one resumes cleanly. Three files: handoff doc (narrative), `prd.json` (structured state), `progress.txt` (append-only learnings). Written in caveman:ultra. Two triggers: (1) **65% threshold** — in-phase safety net, flag-and-wait to next fan-in boundary; (2) **[[unconditional gate reset]]** — at phase-boundary gates 1/4/5, fire regardless of %. Signal carries `reason="threshold"` or `reason="gate-N"`. See ADR 0002, 0014.
 
-**Unconditional gate reset**: Hard session reset after each PHASE-BOUNDARY hard gate (1 = pre-impl→impl, 4 = before verification, 5 = impl→post-impl) REGARDLESS of context %. Each phase starts fresh → no cross-phase context contamination, deterministic, matches ralph stateless pattern. The per-slice gates (2 TDD red, 3 debug escalation) are subagent-internal and fire repeatedly/conditionally → they do NOT reset. Distinct from and composes with the [[Checkpoint]] 65% net (which fires between gates if a phase saturates). See ADR 0014.
+**Unconditional gate reset** _[DEPRECATED — ADR 0022; no gate resets, no context monitoring]_: Hard session reset after each PHASE-BOUNDARY hard gate (1 = pre-impl→impl, 4 = before verification, 5 = impl→post-impl) REGARDLESS of context %. Each phase starts fresh → no cross-phase context contamination, deterministic, matches ralph stateless pattern. The per-slice gates (2 TDD red, 3 debug escalation) are subagent-internal and fire repeatedly/conditionally → they do NOT reset. Distinct from and composes with the [[Checkpoint]] 65% net (which fires between gates if a phase saturates). See ADR 0014.
 _Avoid_: resetting after gates 2/3 (incoherent — they fire inside parallel slice subagents)
 
-**Phase transition**: Ralph-pattern mechanism for starting a fresh session at phase boundary. Saves checkpoint, clears context. Now fires UNCONDITIONALLY at gates 1/4/5 ([[unconditional gate reset]]), not only at 65%. Fresh session read order: handoff doc → `prd.json` → `progress.txt` → invoke suggested skill.
+**Phase transition** _[DEPRECATED — ADR 0022; no phase-boundary resets, resume via state files]_: Ralph-pattern mechanism for starting a fresh session at phase boundary. Saves checkpoint, clears context. Now fires UNCONDITIONALLY at gates 1/4/5 ([[unconditional gate reset]]), not only at 65%. Fresh session read order: handoff doc → `prd.json` → `progress.txt` → invoke suggested skill.
 
 **Fresh session bootstrap**: Sequence a restarted session must follow before any work — read handoff doc first (self-contained primer: domain language, current state, next action, artifacts, suggested skill), then `prd.json`, then `progress.txt`, then invoke the suggested skill.
 _Avoid_: reading `CONTEXT.md` first (handoff doc already contains domain language summary; full glossary pulled on-demand via path reference)
@@ -120,15 +129,15 @@ _Avoid_: "inline TDD" (orchestrator does not write slice code itself)
 
 **grill-with-docs placement**: Runs ONCE in pre-implementation, AFTER map-codebase and before to-prd — reconciles PRD direction + (brownfield) codebase-map existing-language against CONTEXT.md glossary while it brainstorms. Implementation does NOT re-grill; slices inherit shared language via CONTEXT + [[constitution]]. Per-slice gap-finding is the [[slice gap-check]]'s job, not re-grilling language.
 
-**Loop driver**: The orchestrator skill itself, in-session — not an external shell script. Iterates slices, checkpoints at 65%, fresh session resumes from artifacts. Ralph's `ralph.sh` + `<promise>COMPLETE</promise>` rejected; COMPLETE maps to "all stories `passes: true`". See [[skill-driven-loop]] ADR 0005.
+**Loop driver** _[DEPRECATED — ADR 0022; no loop]_: The orchestrator skill itself, in-session — not an external shell script. Iterates slices, checkpoints at 65%, fresh session resumes from artifacts. Ralph's `ralph.sh` + `<promise>COMPLETE</promise>` rejected; COMPLETE maps to "all stories `passes: true`". See [[skill-driven-loop]] ADR 0005.
 _Avoid_: "ralph.sh", "shell loop" (no external bash driver in default path)
 
-**AFK wrapper**: External driver script (`.e2e-engineering/afk.ps1` + `afk.sh`, cross-platform) that runs the [[Task queue]] drain unattended. Sets `E2E_DRIVER=1` then loops `claude --print --dangerously-skip-permissions "/e2e-flight"` (skill is `/e2e-flight` ONLY). Catches four signals: `<e2e-checkpoint>` (respawn, resume same Task) · `<e2e-task-done>` (respawn, next Task) · `<e2e-stall>` (stop, human needed) · `<e2e-complete>` (queue drained, success). Each respawn = a fresh context (the external equivalent of `/clear`). Runs in a VISIBLE window; mirrors all console to `.e2e-engineering/flight.log`; holds `.e2e-engineering/flight.lock` (PID) so a second driver refuses to start (no duplicate windows). Runaway guard: ≥6 consecutive `<e2e-checkpoint>` with no `<e2e-task-done>` (no forward progress) → stop (exit 4) before burning the [[MaxSessions]] ceiling in tokens. Launched by [[/e2e-flight]]'s Step 0 [[E2E_DRIVER guard]], never invoked by [[/e2e-engineering]] directly. Supports claude (default), opencode, codex via preset commands.
+**AFK wrapper** _[DEPRECATED — ADR 0022; no driver loop, flight does one Task per spawn]_: External driver script (`.e2e-engineering/afk.ps1` + `afk.sh`, cross-platform) that runs the [[Task queue]] drain unattended. Sets `E2E_DRIVER=1` then loops `claude --print --dangerously-skip-permissions "/e2e-flight"` (skill is `/e2e-flight` ONLY). Catches four signals: `<e2e-checkpoint>` (respawn, resume same Task) · `<e2e-task-done>` (respawn, next Task) · `<e2e-stall>` (stop, human needed) · `<e2e-complete>` (queue drained, success). Each respawn = a fresh context (the external equivalent of `/clear`). Runs in a VISIBLE window; mirrors all console to `.e2e-engineering/flight.log`; holds `.e2e-engineering/flight.lock` (PID) so a second driver refuses to start (no duplicate windows). Runaway guard: ≥6 consecutive `<e2e-checkpoint>` with no `<e2e-task-done>` (no forward progress) → stop (exit 4) before burning the [[MaxSessions]] ceiling in tokens. Launched by [[/e2e-flight]]'s Step 0 [[E2E_DRIVER guard]], never invoked by [[/e2e-engineering]] directly. Supports claude (default), opencode, codex via preset commands.
 _Avoid_: "ralph loop", "ralph.sh", "session manager"
 
 ## Multi-task flight
 
-**/e2e-flight**: Headless, driver-run sibling skill to [[/e2e-engineering]]. Drains the [[Run selection]] from the [[Task queue]] one Task at a time (impl → gate 4 → automated gate 5 → review), parking human-QA. Step 0 [[E2E_DRIVER guard]]: if `E2E_DRIVER` unset, spawn the [[AFK wrapper]] then exit (bootstrap); if set, do real flight work for one Task-step then exit. Runs ONE Task-step per process — the wrapper, not the skill, owns the loop.
+**/e2e-flight**: Headless implementation worker, sibling to [[/e2e-engineering]] (ADR 0022). Implements exactly ONE Task from the [[Task queue]] per invocation, then exits — no driver loop, no context monitoring; re-invoke for the next Task. WITHIN the spawn it IS the orchestrator: Step 0 forces fan-out (`ToolSearch`-loads `Agent`+`EnterWorktree`; inline slice-impl = hard STOP), then per slice → impl sub-agent wave → [[Expert agent]] review wave (in worktree, before merge) → merge → record. After the DAG drains: e2e-QA stub (gates 4/5 stubbed) → self-review → write qa-signoff.md → exit. Replaces the old driver-run / Step-0-E2E_DRIVER-guard model.
 _Avoid_: "the orchestrator" (that's [[/e2e-engineering]]'s interactive role), "in-session loop" (flight's loop is external)
 
 **/e2e-engineering**: Interactive, human-driven front door. Owns pre-implementation per feature ([map-codebase?] → grill-with-docs → … → to-prd → hard gate 1), appends each approved feature to the [[Task queue]] (born `selected:false`), and at launch shows the [[Run selection]] checkbox as a HARD interactive stop — never pre-checks all, never auto-launches — then invokes [[/e2e-flight]] ONCE for the chosen set. Also auto-detects [[pending-qa]] Tasks on entry and offers the [[QA sign-off session]]. The only skill a human types (though a human may also type [[/e2e-flight]] directly to drain an existing selection).
@@ -152,7 +161,7 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 
 **QA finding**: An issue logged during the [[QA sign-off session]]. Routed through the existing `triage` sub-skill into a NEW [[Task]] in the queue — a bug becomes a linked bugfix Task (the built Task still goes `done`, not reopened); a new idea becomes a feature Task (`status:todo`, unselected). Closes the loop: findings re-enter the queue for a future flight.
 
-**E2E_DRIVER guard**: Env var set by the [[AFK wrapper]] before each spawn. [[/e2e-flight]] Step 0 reads it: SET = worker mode (do one Task-step, exit); UNSET = bootstrap mode (spawn the wrapper, exit). Doubles as the nesting guard — worker sessions never re-spawn a driver.
+**E2E_DRIVER guard** _[DEPRECATED — ADR 0022; no driver, no guard]_: Env var set by the [[AFK wrapper]] before each spawn. [[/e2e-flight]] Step 0 reads it: SET = worker mode (do one Task-step, exit); UNSET = bootstrap mode (spawn the wrapper, exit). Doubles as the nesting guard — worker sessions never re-spawn a driver.
 
 ## Relationships
 
@@ -160,7 +169,7 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 - **Task** owns one `prd.json` and one `progress.txt`; resets both on new task
 - **Phase** contains exactly one **Loop**
 - **Loop** iterates over **Goals**; exits when exit condition met
-- **Checkpoint** saves at 65% context within any **Phase**
+- _[SUPERSEDED — ADR 0022]_ ~~**Checkpoint** saves at 65% context within any **Phase**~~ — no checkpoint / context monitoring; resume via state files
 - **Phase transition** saves **Checkpoint** then starts fresh session
 - **E2E gate** is exit condition for **Implementation** loop (not just post-impl)
 - **Implementation** loop dispatches the [[ready set]] from the depends_on DAG to parallel subagents; orchestrator is [[sole writer]] of prd.json + progress.txt at fan-in
@@ -174,7 +183,7 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 - **[[/e2e-engineering]]** (interactive) produces [[Task queue]] entries; **[[/e2e-flight]]** (headless) consumes them — disjoint writers, sequential in time
 - **[[Task queue]]** holds many **[[Task]]**s; each Task still owns one prd.json + progress.txt under `tasks/<id>/`
 - **[[/e2e-flight]]** holds at most ONE Task `in-progress` — Task-to-Task drain is serial; parallelism lives INSIDE a Task (fan-out/fan-in slices)
-- **[[AFK wrapper]]** owns the external loop (Task-drain + context-reset restarts); the [[Loop driver]] owns the in-session impl-slice loop — two loops at different altitudes (ADR 0005 governs the inner, ADR 0015 the outer)
+- _[SUPERSEDED — ADR 0022]_ ~~[[AFK wrapper]] owns the external loop; [[Loop driver]] owns the in-session impl-slice loop — two loops at different altitudes~~. Now: NO loops. `/e2e-flight` does one Task per spawn; within it, fan-out to slice + expert sub-agents is the only iteration.
 - **[[QA finding]]** flows QA sign-off → triage → new **[[Task]]** in the [[Task queue]] — the cycle closes back on itself
 - Fresh **[[/e2e-flight]]** bootstrap = read [[Task queue]] (which Task) THEN the existing **Fresh session bootstrap** (handoff → prd.json → progress.txt)
 
@@ -186,4 +195,4 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 - "one slice per iteration" — SUPERSEDED. The unit per iteration is the [[ready set]] (DAG-driven), which may fan out to multiple parallel subagents. See ADR 0006.
 - "depends_on" — scope-overloaded. Story-level = snake_case `depends_on` (within one PRD); Task-level = camelCase `dependsOn` (across the [[Task queue]]). Casing disambiguates; never write Task deps as snake_case. See ADR 0017.
 - "single e2e-engineering skill" — REFINED. Split into interactive [[/e2e-engineering]] + headless [[/e2e-flight]] along the human/headless seam. See ADR 0016.
-- "loop runs in-session, not external shell" (ADR 0005) — SCOPED to the impl-slice loop only. The Task-drain + context-reset loop IS external (the [[AFK wrapper]]) — a higher altitude ADR 0005 never addressed. See ADR 0015.
+- "loop" — _SUPERSEDED by ADR 0022._ No external Task-drain loop and no in-session impl loop survive: `/e2e-flight` runs one Task per spawn and exits. The only "iteration" is the per-slice fan-out (impl wave + expert-review wave) inside that single spawn. ADR 0005/0015 two-loop model is retired.

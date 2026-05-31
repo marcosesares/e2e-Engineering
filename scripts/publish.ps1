@@ -9,7 +9,7 @@
          package.json
          dist/marketplace/.claude-plugin/marketplace.json        (metadata.version)
          dist/marketplace/plugins/e2e-engineering/.claude-plugin/plugin.json
-    3. npm run build        (scripts/build-dist.js — syncs skills + afk into dist/)
+    3. npm run build        (scripts/build-dist.js — syncs skills + agents into dist/)
     4. git commit + tag v<version>   (unless -NoGit)
     5. npm publish --access public
     6. npm run publish:marketplace -- --remote <url> --push --force

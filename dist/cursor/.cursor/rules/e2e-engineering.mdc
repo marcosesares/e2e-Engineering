@@ -1,5 +1,5 @@
 ---
-description: e2e-engineering engineering flow — idea to passing E2E. Phase-adaptive flow with five hard gates, vertical-slice TDD loop (sequential), and .e2e-engineering/ state files. Activate when the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "implement feature <name>", "write e2e for <feature>", "build this end to end", or "run the full flow".
+description: e2e-engineering engineering flow — idea to passing E2E. Phase-adaptive flow with hard gates (4 & 5 stubbed pending automation), vertical-slice TDD loop (sequential), and .e2e-engineering/ state files. Activate when the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "implement feature <name>", "write e2e for <feature>", "build this end to end", or "run the full flow".
 alwaysApply: false
 ---
 
