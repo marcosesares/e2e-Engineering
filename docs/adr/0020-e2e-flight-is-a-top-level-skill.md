@@ -1,5 +1,7 @@
 # /e2e-flight must be a top-level skill, not a nested file
 
+> **Decision stands; rationale dated.** `/e2e-flight` remains a top-level skill. But [ADR 0022](0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md) (2026-05-31) removed the AFK wrapper / `claude --print` driver — flight is invoked directly in the current session (by a human or `/e2e-engineering`), not by a driver. Read AFK-wrapper references below as history.
+
 ADR 0016 split the orchestrator into interactive `/e2e-engineering` and headless `/e2e-flight`, and stated both are invocable: the [[AFK wrapper]] runs `claude --print "/e2e-flight"`, and a human may type `/e2e-flight` directly to bootstrap the driver. But the flight skill shipped as `skills/e2e-engineering/flight/SKILL.md` — **nested inside** the e2e-engineering skill directory.
 
 Claude Code discovers skills from **top-level** directories only: each `skills/<name>/SKILL.md` is one skill, one level deep. A `SKILL.md` nested another level down (`e2e-engineering/flight/SKILL.md`) is not registered, regardless of its `name:` frontmatter. So `/e2e-flight` resolved to "command not recognized" — for both the human and the AFK driver. The only thing that "worked" was `/e2e-engineering /e2e-flight`, which invokes the *parent* skill and passes `/e2e-flight` as an argument; the model then reads the nested file as plain text. That accidental path is not skill invocation and does not give flight its own session/description/trigger.

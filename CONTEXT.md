@@ -2,7 +2,7 @@
 
 > **ADR 0022 redesign delta (2026-05-31) — current truth overrides older entries below.**
 > - **TASK > SLICE** (pinned). **TASK** = one `/e2e-flight` spawn unit (one `queue.json` entry / `tasks/<id>/`). **SLICE / sub-task** = one fan-out sub-agent unit (one `prd.json stories[]` entry / DAG node). Older entries say "Goal" / "story" / "vertical slice" for the sub-unit — read them as SLICE.
-> - **No loop, no context monitoring.** `/e2e-flight` does ONE Task per spawn then exits; re-invoke for the next. These terms are **DEPRECATED**: [[Checkpoint]], [[Unconditional gate reset]], [[Phase transition]], [[AFK wrapper]], [[Loop driver]], [[E2E_DRIVER guard]]. The 65% hook is disabled. Supersedes ADR 0002/0014/0015.
+> - **No loop, no context monitoring, no external driver.** `/e2e-flight` runs IN the current session and does ONE Task per spawn then exits; re-invoke for the next. No detached window, no `claude --print` driver, no lock/log file. These terms are **REMOVED**: [[Checkpoint]], [[Unconditional gate reset]], [[Phase transition]], AFK wrapper, Loop driver, E2E_DRIVER guard. The 65% hook is disabled. Supersedes ADR 0002/0014/0015.
 > - **Flight IS the orchestrator.** [[Fan-out / fan-in]] + [[Sole writer]] now run INSIDE the `/e2e-flight` spawn, not an external/separate orchestrator.
 > - **Forcing mechanism** (NEW): bootstrap `ToolSearch`-loads `Agent`+`EnterWorktree`; orchestrator doing slice-impl inline = hard STOP. The structural token fix — guarantees fan-out fires (it didn't last run → the 22.3M-token blowup).
 > - **Expert agent** (NEW): role-prompted reviewer sub-agent (`ui-designer`, `backend-architect`, `dba`, `senior-qa` in `.claude/agents/`). A second fan-out wave reviews each green slice in its worktree before merge (findings Critical/Important/Minor, bounce cap 3), and advises the PRD in pre-impl planning.
@@ -129,16 +129,10 @@ _Avoid_: "inline TDD" (orchestrator does not write slice code itself)
 
 **grill-with-docs placement**: Runs ONCE in pre-implementation, AFTER map-codebase and before to-prd — reconciles PRD direction + (brownfield) codebase-map existing-language against CONTEXT.md glossary while it brainstorms. Implementation does NOT re-grill; slices inherit shared language via CONTEXT + [[constitution]]. Per-slice gap-finding is the [[slice gap-check]]'s job, not re-grilling language.
 
-**Loop driver** _[DEPRECATED — ADR 0022; no loop]_: The orchestrator skill itself, in-session — not an external shell script. Iterates slices, checkpoints at 65%, fresh session resumes from artifacts. Ralph's `ralph.sh` + `<promise>COMPLETE</promise>` rejected; COMPLETE maps to "all stories `passes: true`". See [[skill-driven-loop]] ADR 0005.
-_Avoid_: "ralph.sh", "shell loop" (no external bash driver in default path)
-
-**AFK wrapper** _[DEPRECATED — ADR 0022; no driver loop, flight does one Task per spawn]_: External driver script (`.e2e-engineering/afk.ps1` + `afk.sh`, cross-platform) that runs the [[Task queue]] drain unattended. Sets `E2E_DRIVER=1` then loops `claude --print --dangerously-skip-permissions "/e2e-flight"` (skill is `/e2e-flight` ONLY). Catches four signals: `<e2e-checkpoint>` (respawn, resume same Task) · `<e2e-task-done>` (respawn, next Task) · `<e2e-stall>` (stop, human needed) · `<e2e-complete>` (queue drained, success). Each respawn = a fresh context (the external equivalent of `/clear`). Runs in a VISIBLE window; mirrors all console to `.e2e-engineering/flight.log`; holds `.e2e-engineering/flight.lock` (PID) so a second driver refuses to start (no duplicate windows). Runaway guard: ≥6 consecutive `<e2e-checkpoint>` with no `<e2e-task-done>` (no forward progress) → stop (exit 4) before burning the [[MaxSessions]] ceiling in tokens. Launched by [[/e2e-flight]]'s Step 0 [[E2E_DRIVER guard]], never invoked by [[/e2e-engineering]] directly. Supports claude (default), opencode, codex via preset commands.
-_Avoid_: "ralph loop", "ralph.sh", "session manager"
-
 ## Multi-task flight
 
-**/e2e-flight**: Headless implementation worker, sibling to [[/e2e-engineering]] (ADR 0022). Implements exactly ONE Task from the [[Task queue]] per invocation, then exits — no driver loop, no context monitoring; re-invoke for the next Task. WITHIN the spawn it IS the orchestrator: Step 0 forces fan-out (`ToolSearch`-loads `Agent`+`EnterWorktree`; inline slice-impl = hard STOP), then per slice → impl sub-agent wave → [[Expert agent]] review wave (in worktree, before merge) → merge → record. After the DAG drains: e2e-QA stub (gates 4/5 stubbed) → self-review → write qa-signoff.md → exit. Replaces the old driver-run / Step-0-E2E_DRIVER-guard model.
-_Avoid_: "the orchestrator" (that's [[/e2e-engineering]]'s interactive role), "in-session loop" (flight's loop is external)
+**/e2e-flight**: Headless implementation worker, sibling to [[/e2e-engineering]] (ADR 0022). Implements exactly ONE Task from the [[Task queue]] per invocation, then exits — no driver loop, no context monitoring; re-invoke for the next Task. WITHIN the spawn it IS the orchestrator: Step 0 forces fan-out (`ToolSearch`-loads `Agent`+`EnterWorktree`; inline slice-impl = hard STOP), then per slice → impl sub-agent wave → [[Expert agent]] review wave (in worktree, before merge) → merge → record. After the DAG drains: e2e-QA stub (gates 4/5 stubbed) → self-review → write qa-signoff.md → exit.
+_Avoid_: "the orchestrator" (that's [[/e2e-engineering]]'s interactive role), "external driver" / "detached window" (flight runs in the current session, no loop)
 
 **/e2e-engineering**: Interactive, human-driven front door. Owns pre-implementation per feature ([map-codebase?] → grill-with-docs → … → to-prd → hard gate 1), appends each approved feature to the [[Task queue]] (born `selected:false`), and at launch shows the [[Run selection]] checkbox as a HARD interactive stop — never pre-checks all, never auto-launches — then invokes [[/e2e-flight]] ONCE for the chosen set. Also auto-detects [[pending-qa]] Tasks on entry and offers the [[QA sign-off session]]. The only skill a human types (though a human may also type [[/e2e-flight]] directly to drain an existing selection).
 
@@ -161,8 +155,6 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 
 **QA finding**: An issue logged during the [[QA sign-off session]]. Routed through the existing `triage` sub-skill into a NEW [[Task]] in the queue — a bug becomes a linked bugfix Task (the built Task still goes `done`, not reopened); a new idea becomes a feature Task (`status:todo`, unselected). Closes the loop: findings re-enter the queue for a future flight.
 
-**E2E_DRIVER guard** _[DEPRECATED — ADR 0022; no driver, no guard]_: Env var set by the [[AFK wrapper]] before each spawn. [[/e2e-flight]] Step 0 reads it: SET = worker mode (do one Task-step, exit); UNSET = bootstrap mode (spawn the wrapper, exit). Doubles as the nesting guard — worker sessions never re-spawn a driver.
-
 ## Relationships
 
 - **e2e-engineering** detects entry **Phase** and sequences sub-skills
@@ -183,7 +175,7 @@ _Avoid_: writing it `depends_on` (collides with the story-level field)
 - **[[/e2e-engineering]]** (interactive) produces [[Task queue]] entries; **[[/e2e-flight]]** (headless) consumes them — disjoint writers, sequential in time
 - **[[Task queue]]** holds many **[[Task]]**s; each Task still owns one prd.json + progress.txt under `tasks/<id>/`
 - **[[/e2e-flight]]** holds at most ONE Task `in-progress` — Task-to-Task drain is serial; parallelism lives INSIDE a Task (fan-out/fan-in slices)
-- _[SUPERSEDED — ADR 0022]_ ~~[[AFK wrapper]] owns the external loop; [[Loop driver]] owns the in-session impl-slice loop — two loops at different altitudes~~. Now: NO loops. `/e2e-flight` does one Task per spawn; within it, fan-out to slice + expert sub-agents is the only iteration.
+- **NO loops, NO external driver** (ADR 0022). `/e2e-flight` runs in the current session, one Task per spawn; within it, fan-out to slice + expert sub-agents is the only iteration.
 - **[[QA finding]]** flows QA sign-off → triage → new **[[Task]]** in the [[Task queue]] — the cycle closes back on itself
 - Fresh **[[/e2e-flight]]** bootstrap = read [[Task queue]] (which Task) THEN the existing **Fresh session bootstrap** (handoff → prd.json → progress.txt)
 
