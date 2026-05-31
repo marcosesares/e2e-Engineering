@@ -56,23 +56,15 @@ function main() {
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
 
-  // afk wrappers — keep every distributed copy in sync with scripts/afk.*
-  //   dist/afk.ps1                         (install.js distributes this)
-  //   <plugin>/afk.ps1 + afk.sh            (flight Step 0 copies these into .e2e-engineering/)
-  const afkTargets = [
-    ["afk.ps1", path.join(REPO, "dist", "afk.ps1")],
-    ["afk.ps1", path.join(PLUGIN_DIR, "afk.ps1")],
-    ["afk.sh",  path.join(PLUGIN_DIR, "afk.sh")]
-  ];
-  for (const [name, dst] of afkTargets) {
-    const src = path.join(REPO, "scripts", name);
-    if (fs.existsSync(src)) {
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.copyFileSync(src, dst);
-      process.stdout.write("build-dist: copied " + name + " → " + path.relative(REPO, dst) + "\n");
-    } else {
-      process.stderr.write("build-dist: WARNING — scripts/" + name + " not found, skipping\n");
-    }
+  // expert reviewer agents (ADR 0022) — sync .claude/agents/ → <plugin>/agents/
+  const agentsSrc = path.join(SKILLS_SRC, "..", "agents");
+  if (fs.existsSync(agentsSrc)) {
+    const agentsDst = path.join(PLUGIN_DIR, "agents");
+    rmrf(agentsDst);
+    copyDir(agentsSrc, agentsDst);
+    process.stdout.write("build-dist: synced agents → " + path.relative(REPO, agentsDst) + "\n");
+  } else {
+    process.stderr.write("build-dist: WARNING — .claude/agents not found, skipping\n");
   }
 
   const count = countFiles(PLUGIN_SKILLS_ROOT);

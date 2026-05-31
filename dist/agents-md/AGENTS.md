@@ -1,6 +1,6 @@
 # e2e-engineering — engineering flow (portable)
 
-Self-contained engineering flow for any agent that reads `AGENTS.md` (Codex, OpenCode, Cursor). Drives a Task from idea to passing E2E. Portable variant of the Claude Code `e2e-engineering` skill — **slices run SEQUENTIALLY here** (no parallel subagent fan-out; that needs Claude Code worktrees). Same phases, same five hard gates, same state files.
+Self-contained engineering flow for any agent that reads `AGENTS.md` (Codex, OpenCode, Cursor). Drives a Task from idea to passing E2E. Portable variant of the Claude Code `e2e-engineering` skill — **slices run SEQUENTIALLY here** (no parallel subagent fan-out; that needs Claude Code worktrees). Same phases, same hard gates (gates 4 & 5 stubbed pending E2E automation — ADR 0022), same state files. No context monitoring / checkpoint (ADR 0022).
 
 When the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "implement feature <name>", "write e2e for <feature>", "build this end to end", or "run the full flow", follow this document.
 
@@ -34,7 +34,7 @@ COMPLETE = every story `status: "done"`.
    - prototype? → YES if UX/state-machine uncertainty (throwaway).
 3. **research** (if needed) → write `research.md` (may rot; version-pin facts).
 4. **prototype** (if needed) → throwaway spike; ui (visual) or logic (state machine). Keep the understanding, discard the code.
-5. **Write the PRD** → `prd.json`. Refactor-shaped stories allowed (behavior-preservation + structural goal). Capture testing-decisions per story (feature vs regression shape) → these become test-case `.md` files.
+5. **Write the PRD** → `prd.json`. Make it architecture-aware — respect the project's ownership/naming rules (which seams to extend, which components to reuse) so the spec is right before gate 1. Refactor-shaped stories allowed (behavior-preservation + structural goal). Capture testing-decisions per story (feature vs regression shape) → these become test-case `.md` files.
 
 **HARD GATE 1 — PRD approved.** Present the PRD. Require explicit human consent before any code. Do not proceed on silence.
 
@@ -52,16 +52,17 @@ Repeat until COMPLETE:
    - **RED** — write a failing test for the acceptance behavior. Confirm it fails for the right reason. **HARD GATE 2: no production code before a failing test.**
    - **GREEN** — minimum code to pass.
    - **REFACTOR** — clean up, tests green, stay in scope.
-   - **Automate the feature E2E** for this story's feature-shape test-cases.
+   - **Author the feature E2E test-case doc** for this story (steps + validations). Automating it is stubbed (see gate 4).
    - **HARD GATE 3 — debug escalation:** if a fix fails 3 times, STOP blind retries. Do ONE systematic-debugging pass (reproduce → isolate → root-cause → fix). Still red → mark story `blocked`, log in `progress.txt`, move to the next ready story. Escalate to human only on stall (no ready work, or all remaining depend on a blocked story).
-3. **Close the slice** — commit/merge to baseBranch, set `status: done`, append a `## Story Log` line + stage durable learnings under `## Pending Amendments` in `progress.txt`.
-4. **Checkpoint** if context is getting large: ensure prd.json + progress.txt current, write a handoff note, and resume cleanly next session (read handoff → prd.json → progress.txt → continue).
+3. **Close the slice** — commit to baseBranch, set `status: done`, append a `## Story Log` line + stage durable learnings under `## Pending Amendments` in `progress.txt`.
+
+No checkpoint, no handoff, no context monitoring (ADR 0022). A fresh session resumes by reading state: `prd.json` (which slices done/todo/blocked) → `progress.txt` (tail for current state) → continue.
 
 ### After COMPLETE
-5. **Regression E2E pass** — now the whole feature exists: automate the regression-shape (cross-slice) test-cases. Run the FULL suite.
-   **HARD GATE 4 — E2E suite green** before leaving implementation.
-6. **Verify before done** — re-run the FULL suite + actually launch and exercise the app (browser for UI) + tick every PRD acceptance criterion.
-   **HARD GATE 5 — verification-before-completion.** If you can't exercise it, say so; don't claim success on tests alone.
+4. **Regression E2E docs** — now the whole feature exists: author the regression-shape (cross-slice) test-case docs.
+   **GATE 4 — full E2E suite green — STUBBED, pending automation (ADR 0022, not deleted).** Authoring the docs is the live step; running an automated suite is a TODO. Interim verification = self-review + human-QA checklist.
+5. **Verify before done** — tick every PRD acceptance criterion against the code.
+   **GATE 5 — verification-before-completion — STUBBED, pending automation.** The full-suite re-run + live app exercise are a TODO while automation is stubbed. Interim: self-review against acceptance criteria + human-QA checklist. If you can't exercise it, say so; don't claim success on tests alone.
 
 ---
 
@@ -72,12 +73,12 @@ Repeat until COMPLETE:
 
 ---
 
-## The five hard gates (never rationalize past these)
+## The hard gates (never rationalize past these)
 1. PRD approved → implementation.
 2. Failing test before production code.
 3. Debug escalation: 3 strikes → one systematic-debugging pass → else `blocked`; human only on stall.
-4. Full E2E suite green → post-implementation.
-5. Verification-before-completion (full suite + live exercise + every acceptance criterion).
+4. Full E2E suite green → post-implementation. **[STUBBED — pending E2E automation (ADR 0022); author the TC docs now, run the suite when automation lands.]**
+5. Verification-before-completion (full suite + live exercise + every acceptance criterion). **[STUBBED — pending automation; interim = self-review against acceptance criteria + human-QA checklist.]**
 
 Soft gates (coverage/lint/style): overridable WITH a logged reason; silent skip not allowed.
 
@@ -102,7 +103,7 @@ Soft gates (coverage/lint/style): overridable WITH a logged reason; silent skip 
 ---
 
 ## What's different from the Claude Code version
-- **Sequential, not parallel** — one slice at a time in dependency order. No worktree fan-out / subagent dispatch.
-- **No automatic 65% context hook** — checkpoint by judgment (state files + handoff note).
-- Everything else — phases, gates, DAG, TDD, state files, constitution — is identical.
-For full-fidelity parallel execution, install the Claude Code skill: `npx e2e-engineering init --target claude`.
+- **Sequential, not parallel** — one slice at a time in dependency order. No worktree fan-out / subagent dispatch / expert-review agents (those need Claude Code).
+- **No context monitoring / checkpoint** — a session resumes by reading state files (ADR 0022); there is no 65% hook and no handoff doc.
+- **Gates 4 & 5 stubbed** — pending E2E automation, project-wide (ADR 0022). Everything else — phases, gates 1–3, DAG, TDD, state files, constitution — is identical.
+For full-fidelity parallel execution + the expert-review wave, install the Claude Code skill (`/e2e-flight`, one Task per spawn — ADR 0022): `npx e2e-engineering init --target claude`.
