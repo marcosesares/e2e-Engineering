@@ -8,4 +8,4 @@ Codex routing block. Trigger phrases → skill entry points.
 | "e2e-flight", "flight", "drain the queue", "implement the selected tasks" | `.agents/skills/e2e-flight/SKILL.md` |
 | "grill-with-docs", "stress-test my plan", "challenge this plan" | `.agents/skills/grill-with-docs/SKILL.md` |
 
-**Note:** e2e-flight requires `spawn_agent`/`spawn_agents_on_csv` fan-out capability. Emits `<e2e-stall reason="fanout-unavailable" />` if unavailable — never falls back to inline slice work (ADR 0023, decision #9).
+**Note:** e2e-flight requires worker fan-out capability and branch-visible worker changes. Emits `<e2e-stall reason="fanout-unavailable" />` or `<e2e-stall reason="worker-changes-unavailable" />` if unavailable; never falls back to inline slice work (ADR 0023).

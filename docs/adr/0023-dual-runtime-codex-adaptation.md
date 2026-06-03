@@ -6,7 +6,7 @@ The e2e-engineering skill system is adapted to run on Codex CLI without forking 
 
 ## Context
 
-The skill system was built for Claude Code primitives: `Agent`, `EnterWorktree`/`ExitWorktree`, `ToolSearch`, `.claude/skills/`, `.claude/agents/*.md`. Codex CLI has a different tool surface: manifest-driven sub-agent spawn (`spawn_agents_on_csv` or `spawn_agent`/`wait_agent`), internally-managed worktrees, `~/.codex/agents/*.toml`, `.agents/skills/`, and `AGENTS.md` for routing. The two runtimes are different enough that naïve porting would either duplicate all skill content or hard-couple the shared core to one runtime's primitives.
+The skill system was built for Claude Code primitives: `Agent`, `EnterWorktree`/`ExitWorktree`, `ToolSearch`, `.claude/skills/`, `.claude/agents/*.md`. Codex CLI has a different tool surface: manifest-driven sub-agent spawn (`spawn_agents_on_csv` if available, otherwise `spawn_agent`/`wait_agent`), internally-managed workspaces, generic worker roles, `.agents/skills/`, and `AGENTS.md` for routing. Codex custom TOML roles are not load-bearing because they are not guaranteed to surface as spawnable `agent_type` values. The two runtimes are different enough that naïve porting would either duplicate all skill content or hard-couple the shared core to one runtime's primitives.
 
 Two viable shapes existed: Codex-only migration (drop Claude Code) or dual-runtime with a shared core. Codex-only was rejected — Claude Code remains the primary runtime and the skill system's existing tests and validation are Claude Code–based. Abandoning it before Codex parity is proven would leave no working runtime during migration.
 
@@ -35,8 +35,8 @@ skills/                          ← runtime-neutral, canonical
   e2e-engineering/SKILL.md
   e2e-flight/SKILL.md
 
-.claude/agents/*.md              ← generated
-~/.codex/agents/*.toml           ← generated
+.claude/agents/*.md              ← generated Claude Code wrappers
+Codex reviewer roles             ← prompt-injected worker agents
 ```
 
 Rule: a file with no runtime primitives lives in `skills/`; a file referencing `EnterWorktree`/`Agent`/`spawn_agent`/etc. lives in the runtime-specific entry point. Sub-skills, schemas, constitution, and expert specs are shared — only the two `SKILL.md` entry points per skill are runtime-coupled.
@@ -49,9 +49,11 @@ The Codex transport is `spawn_agents_on_csv` if available, otherwise `spawn_agen
 
 Natural-language fan-out weakens worktree isolation, result collection, sole-writer state updates, and bounce-ceiling enforcement. It may be used for low-risk exploratory work but is never the default for implementation slices.
 
+Codex implementation workers use **branch-visible integration** when the runtime proves it is available: the orchestrator instructs each worker to create and commit to `slice/<story-id>`, the worker returns only the branch name plus slice result manifest, and the orchestrator validates/diffs/tests/merges that branch locally. This is the preferred token path because code changes stay in git instead of crossing the chat boundary as patches. Step 0 probes this capability with a disposable branch commit; if the branch or commit is not visible from the orchestrator, e2e-flight emits `<e2e-stall reason="worker-changes-unavailable" />` and exits. Text patch payloads are not the full-fidelity fallback.
+
 ### 3. Artifact-driven expert-review wave
 
-Expert reviewers receive artifacts — not worktree paths. Input to each reviewer: PRD, constitution, relevant test-case docs, slice IDs, changed file list, diff/patch summary, test output evidence, applicable expert spec. Reviewers are read-only by contract; each returns a **review manifest** (`reviewerRole`, `sliceIds[]`, `findings[]` with severity/file/location/issue/rationale/suggestedFix/blocking). Fan-out is by expertise area, not necessarily one reviewer per implementation slice — catches cross-slice integration issues.
+Expert reviewers receive artifacts — not worktree paths. Input to each reviewer: PRD, constitution, relevant test-case docs, slice IDs, changed file list, diff/patch summary, test output evidence, applicable expert spec. Reviewers are read-only by contract; each returns a **review manifest** (`reviewerRole`, `sliceIds[]`, `findings[]` with severity/file/location/issue/rationale/suggestedFix/blocking). Fan-out is by expertise area, not necessarily one reviewer per implementation slice — catches cross-slice integration issues. In Codex, the orchestrator spawns generic `worker` agents and injects the canonical expert spec into each prompt/review bundle; named Codex role wrappers are not required.
 
 Worktree-path input was rejected because Codex manages worktree isolation internally; coupling reviewers to a specific worktree path creates a runtime dependency that can fail silently and makes the review contract harder to port.
 
@@ -63,8 +65,9 @@ Step 0 of Codex e2e-flight runs a two-step capability handshake before any slice
 
 1. Static capability hint — use tool-discovery primitive if available in the runtime (not sufficient alone).
 2. Live no-op probe — spawn a trivial worker, wait for `{"status":"ok","capability":"fanout-probe"}`, close the worker; short timeout.
+3. Branch-visibility probe — spawn a trivial worker that creates a disposable branch + commit, verify the branch and commit are visible to the orchestrator, then delete the probe branch.
 
-Any failure at either step: `<e2e-stall reason="fanout-unavailable" />` + EXIT. Inline slice-impl remains a hard STOP. The skill trigger declares sub-agent usage explicitly so runtimes requiring user authorization can prompt before Step 0 runs.
+Any failure in steps 1-2: `<e2e-stall reason="fanout-unavailable" />` + EXIT. Failure in step 3: `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. Inline slice-impl remains a hard STOP. Text-patch fallback for implementation slices is rejected because it moves large diffs through the conversation and breaks the token model. The skill trigger declares sub-agent usage explicitly so runtimes requiring user authorization can prompt before Step 0 runs.
 
 A static-only check proves configuration, not runtime. The live probe is the gate.
 
@@ -86,14 +89,13 @@ A static-only check proves configuration, not runtime. The live probe is the gat
 
 `prd.json` carries lightweight pointers (`resultManifestPath`, `reviewManifestPath`) and authoritative status. Sole writer reconciles sidecar status at fan-in and writes authoritative story status to `prd.json` — sidecar status is never authoritative. This applies to both runtimes; it is a schema improvement, not a Codex fork.
 
-### 6. Generated expert agent wrappers
+### 6. Expert role adapters
 
-Canonical expert definitions live in `skills/e2e-engineering/agents/*.md` — pure review rubric, no runtime primitives. `agents.manifest.json` holds runtime metadata per role (model, sandbox_mode, mcp_servers). `generate-agent-wrappers.ps1` emits self-contained runtime wrappers:
+Canonical expert definitions live in `skills/e2e-engineering/agents/*.md` — pure review rubric, no runtime primitives. `agents.manifest.json` holds runtime metadata per role (description, allowed tools, model policy where supported). `generate-agent-wrappers.ps1` emits self-contained Claude Code wrappers:
 
 - `.claude/agents/<role>.md` — Claude Code format
-- `~/.codex/agents/<role>.toml` — Codex TOML; `developer_instructions` inlines the canonical spec rather than path-referencing (path references can fail silently in Codex)
 
-Generated files are checked into source. Never edited by hand — regenerate from canonical source.
+Codex does not depend on generated `~/.codex/agents/*.toml` wrappers. Codex entry points spawn standard `worker` agents and include the canonical expert spec directly in the prompt. This preserves the single source of truth without relying on custom role registration that may not appear in the runtime tool surface.
 
 ### 7. AGENTS.md tiny router
 
@@ -110,13 +112,25 @@ e2e-flight requires parallel sub-agent capability; if fan-out is unavailable, it
 
 Routing block generated from SKILL.md `description` frontmatter to prevent trigger-phrase drift. Claude Code does not need AGENTS.md — the harness auto-reads SKILL.md `description` for trigger matching.
 
-### 8. Four-phase incremental migration
+### 8. Distribution installs the full runtime tree
+
+Installers and generated `dist/` artifacts must preserve the same three-zone layout as source. Runtime entry points are thin wrappers and are not useful without the shared `skills/` root they link to.
+
+- Claude target installs `skills/`, `.claude/skills/`, and `.claude/agents/`.
+- Codex target installs `skills/`, `.agents/skills/`, and `AGENTS.md`.
+- Cursor/OpenCode targets follow the Codex shape, with Cursor also receiving its `.cursor/rules` file.
+- Claude marketplace plugins carry `shared/skills/` inside the plugin and rewrite entry-point links to that plugin-local shared tree.
+- Installer cleanup is explicit and conservative: known renamed files are warned about by default and deleted only when the user passes `--force`. Current known renames: `.claude/agents/ui-designer.md` -> `.claude/agents/frontend-reviewer.md`, `.claude/agents/senior-qa.md` -> `.claude/agents/test-reviewer.md`.
+
+The old portable `AGENTS.md`-only sequential flow was rejected after Codex full-fidelity support landed. A router without `.agents/skills/` and shared `skills/` is a broken install, not a degraded mode.
+
+### 9. Four-phase incremental migration
 
 Layout and adapter changes are kept in separate phases. Each phase leaves at least one runtime working and is independently reviewable.
 
 1. **Extract shared core** — move runtime-neutral content from `.claude/skills/e2e-engineering/` to `skills/e2e-engineering/`; update Claude Code SKILL.md entry points to thin wrappers; verify Claude Code green.
 2. **Add Codex runtime** — add `.agents/skills/` entry-point SKILL.md files and AGENTS.md routing block.
-3. **Add expert agent adapters** — add canonical specs, `agents.manifest.json`, generation script; emit runtime wrappers.
+3. **Add expert agent adapters** — add canonical specs, `agents.manifest.json`, generation script; emit Claude wrappers and use prompt-injected Codex worker roles.
 4. **Add evidence sidecars** — add `manifests/<story-id>/` directory and update `prd.json` schema with manifest pointers.
 
 ## Considered Options
@@ -124,12 +138,18 @@ Layout and adapter changes are kept in separate phases. Each phase leaves at lea
 - **Codex-only migration** — rejected: Claude Code is the validated primary runtime; abandoning it before Codex parity would leave no working runtime during migration and discard all existing validation.
 - **Natural-language fan-out as primary Codex path** — rejected: weakens sole-writer guarantee, bounce-ceiling enforcement, and gate evidence collection. The workflow depends on auditability — PRD state, slice status, RED/GREEN evidence, blocked reasons.
 - **Worktree-path-driven expert reviewers** — rejected: Codex manages worktrees internally; worktree path exposure is implementation-dependent and creates a runtime coupling that can fail silently.
-- **Hand-maintained dual agent definition files** — rejected: `.claude/agents/*.md` and `~/.codex/agents/*.toml` maintained separately will drift. Generated from a single canonical source is the only maintainable option.
+- **Patch-payload integration for Codex slices** — rejected as the full-fidelity default: it is token-expensive, scales poorly with real code changes, and makes review/merge evidence harder to audit than git refs. If branch-visible worker commits are unavailable, the run stalls instead.
+- **Hand-maintained dual agent definition files** — rejected: maintaining `.claude/agents/*.md` and separate Codex role files by hand will drift. Claude wrappers are generated from the canonical specs; Codex roles are prompt-injected from the same specs.
+- **AGENTS.md-only Codex install** — rejected: `AGENTS.md` is only a router. Without `.agents/skills/` and the shared `skills/` root, the routed skill files and their linked schemas/sub-skills are missing.
+- **Silent cleanup of deprecated install files** — rejected: stale files can confuse readers, but deleting user-visible files without `--force` is too surprising. Warn by default; delete only explicit known renames with `--force`.
 - **Big-bang migration** — rejected: path breakage, wrapper drift, and state-schema regressions all land at once; incremental phases isolate failure modes.
 
 ## Consequences
 
 - Sub-skills, schemas, constitution, and expert specs become runtime-agnostic — any future runtime target only needs new entry-point SKILL.md files, not content duplication.
 - The forcing mechanism (Step 0 live probe) is load-bearing in Codex as it is in Claude Code — if the probe is skipped or weakened, silent fallback to inline slice-impl will cause the same token blowup as the ADR 0022 incident.
+- Codex full-fidelity implementation depends on branch-visible worker commits. This runtime has been verified to expose worker-created branches to the orchestrator; future runtimes must pass the same probe before slice work begins.
 - Evidence sidecars improve auditability across both runtimes but add a new artifact type to the state schema; consumers of `prd.json` must not assume gate evidence is inline.
-- Generated agent wrapper files must be regenerated whenever canonical specs change — a CI check or pre-commit hook on `skills/e2e-engineering/agents/` is advisable.
+- Generated Claude agent wrapper files must be regenerated whenever canonical specs change — a CI check or pre-commit hook on `skills/e2e-engineering/agents/` is advisable. Codex entry points must inject the same canonical specs into `worker` prompts.
+- Release/build tooling must copy shared `skills/` plus the runtime entry-point tree for each target. Any installed wrapper pointing to `../../../skills/...` must have a matching repo-root `skills/` tree.
+- Installers may remove deprecated files only from an explicit known-renames list and only with `--force`; otherwise they warn with the replacement path.

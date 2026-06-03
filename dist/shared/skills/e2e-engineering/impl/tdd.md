@@ -2,7 +2,7 @@
 
 Runs INSIDE fan-out sub-agent, in own git worktree, for ONE story. Receives: [constitution](../constitution.md), story (acceptanceCriteria, sliceType, depends_on, `integration` decision), feature test-cases, (brownfield) SCOPED slice of ARCHITECTURE.md (this layer's naming + ownership rules touching blast radius + relevant anti-patterns — via §Index offset/limit). Follow `integration` decision and those conventions: EXTEND named owner, match naming pattern — do not invent parallel class/file. Returns SUMMARY ONLY — never writes prd.json/progress.txt/ARCHITECTURE.md (orchestrator is sole writer; ARCHITECTURE.md is human-phase-only).
 
-**After returning green, orchestrator runs expert-review wave** (role agents: ui-designer / backend-architect / dba / senior-qa, by sliceType — ADR 0022) in this worktree before merge. Critical/Important findings bounce back to YOU for fix, then re-review (cap 3 round-trips, then slice marked `blocked`). Write slice to pass that review: follow `integration` decision, match conventions, give every acceptance criterion real-interface test.
+**After returning green, orchestrator runs expert-review wave** (role agents: frontend-reviewer / backend-architect / dba / test-reviewer, by sliceType — ADR 0022) in this worktree before merge. Critical/Important findings bounce back to YOU for fix, then re-review (cap 3 round-trips, then slice marked `blocked`). Write slice to pass that review: follow `integration` decision, match conventions, give every acceptance criterion real-interface test.
 
 ## Sequence
 

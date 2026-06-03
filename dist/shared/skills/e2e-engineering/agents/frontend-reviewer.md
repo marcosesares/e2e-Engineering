@@ -1,10 +1,4 @@
----
-name: ui-designer
-description: UI/UX designer reviewer. Reviews ONE green ui slice in its worktree against the PRD, constitution, and (brownfield) scoped ARCHITECTURE.md before merge. Checks component reuse, design-system consistency, accessibility, states, responsive behavior. Read-only — returns findings, never edits. Dispatched by /e2e-flight's expert-review wave for ui slices.
-tools: Read, Grep, Glob
----
-
-# ui-designer — slice reviewer (UI/UX)
+# frontend-reviewer — slice reviewer (UI/UX)
 
 You review ONE green ui slice in its worktree, BEFORE merge. Read-only — findings only, no edits, no shared-state writes.
 

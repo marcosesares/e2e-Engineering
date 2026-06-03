@@ -8,6 +8,16 @@ const PKG_ROOT = path.resolve(__dirname, "..");
 const DIST = path.join(PKG_ROOT, "dist");
 
 const TARGETS = ["claude", "cursor", "codex", "opencode"];
+const KNOWN_RENAMES = [
+  {
+    from: path.join(".claude", "agents", "ui-designer.md"),
+    to: path.join(".claude", "agents", "frontend-reviewer.md")
+  },
+  {
+    from: path.join(".claude", "agents", "senior-qa.md"),
+    to: path.join(".claude", "agents", "test-reviewer.md")
+  }
+];
 
 function log(msg) {
   process.stdout.write(msg + "\n");
@@ -72,20 +82,52 @@ function requireDist(rel) {
   return p;
 }
 
+function cleanupKnownRenames(dest, opts, removed) {
+  for (const rename of KNOWN_RENAMES) {
+    const oldPath = path.join(dest, rename.from);
+    if (!fs.existsSync(oldPath)) continue;
+
+    const relOld = path.relative(dest, oldPath);
+    if (!opts.force) {
+      warn("deprecated file remains: " + relOld + " (renamed to " + rename.to + "). Re-run with --force to delete it.");
+      continue;
+    }
+
+    if (opts.dryRun) {
+      warn("[dry-run] would delete deprecated file: " + relOld + " (renamed to " + rename.to + ")");
+    } else {
+      fs.rmSync(oldPath, { force: true });
+      warn("deleted deprecated file: " + relOld + " (renamed to " + rename.to + ")");
+    }
+    removed.push(oldPath);
+  }
+}
+
+function installSharedSkills(dest, opts, written) {
+  const src = requireDist(path.join("shared", "skills"));
+  copyRecursive(src, path.join(dest, "skills"), opts, written);
+}
+
 // Expert reviewer agents shipped alongside the skills (ADR 0022).
 function installClaudeAgents(dest, opts, written) {
-  const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "agents"));
+  const src = requireDist(path.join("claude", "agents"));
   copyRecursive(src, path.join(dest, ".claude", "agents"), opts, written);
 }
 
-const CLAUDE_SKILLS = ["e2e-engineering", "e2e-flight"];
+const CLAUDE_SKILLS = ["e2e-engineering", "e2e-flight", "grill-with-docs"];
 
 function installClaude(dest, opts, written) {
+  installSharedSkills(dest, opts, written);
   for (const name of CLAUDE_SKILLS) {
-    const src = requireDist(path.join("marketplace", "plugins", "e2e-engineering", "skills", name));
+    const src = requireDist(path.join("claude", "skills", name));
     copyRecursive(src, path.join(dest, ".claude", "skills", name), opts, written);
   }
   installClaudeAgents(dest, opts, written);
+}
+
+function installCodexSkills(dest, opts, written) {
+  const src = requireDist(path.join("codex", ".agents", "skills"));
+  copyRecursive(src, path.join(dest, ".agents", "skills"), opts, written);
 }
 
 function installAgentsMd(dest, opts, written) {
@@ -103,9 +145,17 @@ function installAgentsMd(dest, opts, written) {
 }
 
 function installCursor(dest, opts, written) {
+  installSharedSkills(dest, opts, written);
+  installCodexSkills(dest, opts, written);
   const rule = requireDist(path.join("cursor", ".cursor", "rules", "e2e-engineering.mdc"));
   copyRecursive(rule, path.join(dest, ".cursor", "rules", "e2e-engineering.mdc"), opts, written);
-  // Cursor also reads AGENTS.md — install it for the flow body.
+  // Cursor also reads AGENTS.md — install the router.
+  installAgentsMd(dest, opts, written);
+}
+
+function installCodexLike(dest, opts, written) {
+  installSharedSkills(dest, opts, written);
+  installCodexSkills(dest, opts, written);
   installAgentsMd(dest, opts, written);
 }
 
@@ -114,7 +164,7 @@ function run(target, dest, opts, written) {
     case "claude": installClaude(dest, opts, written); break;
     case "cursor": installCursor(dest, opts, written); break;
     case "codex":
-    case "opencode": installAgentsMd(dest, opts, written); break;
+    case "opencode": installCodexLike(dest, opts, written); break;
     default: die("unknown target: " + target + " (expected: " + TARGETS.join(", ") + ", or all)");
   }
 }
@@ -132,10 +182,10 @@ Options:
   -h, --help            show this
 
 Targets:
-  claude    full-fidelity skill → .claude/skills/e2e-engineering/ (parallel slices, gates, checkpoints)
-  cursor    .cursor/rules/e2e-engineering.mdc + AGENTS.md          (sequential)
-  codex     AGENTS.md                                       (sequential)
-  opencode  AGENTS.md                                       (sequential)
+  claude    shared skills + .claude/skills + .claude/agents
+  cursor    shared skills + .agents/skills + AGENTS.md + .cursor/rules/e2e-engineering.mdc
+  codex     shared skills + .agents/skills + AGENTS.md
+  opencode  shared skills + .agents/skills + AGENTS.md
   all       every target above
 
 Auto-detect: .claude/ → claude · .cursor/ → cursor · else → codex (AGENTS.md)`;
@@ -167,6 +217,8 @@ function main() {
   const opts = { force: args.force, dryRun: args.dryRun, seen: new Set() };
   const written = [];
   for (const t of targets) run(t, dest, opts, written);
+  const removed = [];
+  if (targets.includes("claude")) cleanupKnownRenames(dest, opts, removed);
 
   if (args.dryRun) {
     log("\n[dry-run] would write " + written.length + " file(s):");
@@ -174,12 +226,17 @@ function main() {
     log("\ninstalled " + written.length + " file(s):");
   }
   for (const f of written) log("  " + path.relative(dest, f));
+  if (removed.length) {
+    if (args.dryRun) log("\n[dry-run] would delete " + removed.length + " deprecated file(s):");
+    else log("\ndeleted " + removed.length + " deprecated file(s):");
+    for (const f of removed) log("  " + path.relative(dest, f));
+  }
 
   if (!args.dryRun && targets.includes("claude")) {
     log("\nClaude Code: restart/refresh, then type `/e2e-engineering`.");
   }
   if (!args.dryRun && targets.some((t) => t !== "claude")) {
-    log("Codex/Cursor/OpenCode: the flow is in AGENTS.md — your agent reads it automatically.");
+    log("Codex/Cursor/OpenCode: AGENTS.md routes to .agents/skills; shared skill files are under skills/.");
   }
 }
 

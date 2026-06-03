@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 "use strict";
 
-// Sync the canonical e2e-engineering skills into the marketplace plugin tree.
-// Canonical source of truth: .claude/skills/<skill>/  (one dir per top-level skill).
-// SKILLS lists every skill the plugin ships; both must be top-level dirs so the
-// installed plugin can resolve /e2e-engineering AND /e2e-flight as commands.
-// The AGENTS.md and Cursor variants are authored/maintained by hand in dist/
-// (they are editorial flattenings, not mechanical copies) and are left untouched.
+// Sync the dual-runtime source tree into npm + marketplace dist artifacts.
+// Canonical source of truth:
+//   skills/          shared runtime-neutral core
+//   .claude/skills/  Claude entry points
+//   .agents/skills/  Codex entry points
+//   AGENTS.md        Codex router
 
 const fs = require("fs");
 const path = require("path");
 
 const REPO = path.resolve(__dirname, "..");
-const SKILLS_SRC = path.join(REPO, ".claude", "skills");
-const SKILLS = ["e2e-engineering", "e2e-flight"];
+const SHARED_SKILLS_SRC = path.join(REPO, "skills");
+const CLAUDE_SKILLS_SRC = path.join(REPO, ".claude", "skills");
+const CODEX_SKILLS_SRC = path.join(REPO, ".agents", "skills");
+const CLAUDE_AGENTS_SRC = path.join(REPO, ".claude", "agents");
+const TOP_LEVEL_SKILLS = ["e2e-engineering", "e2e-flight", "grill-with-docs"];
+const DIST = path.join(REPO, "dist");
 const PLUGIN_DIR = path.join(REPO, "dist", "marketplace", "plugins", "e2e-engineering");
 const PLUGIN_SKILLS_ROOT = path.join(PLUGIN_DIR, "skills");
+const PLUGIN_SHARED_ROOT = path.join(PLUGIN_DIR, "shared", "skills");
 
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
@@ -31,16 +36,50 @@ function rmrf(p) {
   if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
 }
 
+function copyFileWithReplacements(src, dst, replacements) {
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  let text = fs.readFileSync(src, "utf8");
+  for (const [from, to] of replacements) text = text.split(from).join(to);
+  fs.writeFileSync(dst, text);
+}
+
+function assertExists(p, label) {
+  if (!fs.existsSync(p)) {
+    process.stderr.write("build-dist: missing " + label + " at " + p + "\n");
+    process.exit(1);
+  }
+}
+
 function main() {
-  for (const name of SKILLS) {
-    const src = path.join(SKILLS_SRC, name);
-    if (!fs.existsSync(src)) {
-      process.stderr.write("build-dist: canonical skill not found at " + src + "\n");
-      process.exit(1);
-    }
+  assertExists(SHARED_SKILLS_SRC, "shared skills");
+  assertExists(CLAUDE_SKILLS_SRC, "Claude skills");
+  assertExists(CODEX_SKILLS_SRC, "Codex skills");
+  assertExists(CLAUDE_AGENTS_SRC, "Claude agents");
+  assertExists(path.join(REPO, "AGENTS.md"), "AGENTS.md router");
+
+  // npm installer artifacts
+  syncDir(SHARED_SKILLS_SRC, path.join(DIST, "shared", "skills"));
+  syncDir(CLAUDE_SKILLS_SRC, path.join(DIST, "claude", "skills"));
+  syncDir(CLAUDE_AGENTS_SRC, path.join(DIST, "claude", "agents"));
+  syncDir(CODEX_SKILLS_SRC, path.join(DIST, "codex", ".agents", "skills"));
+  copyFileWithReplacements(path.join(REPO, "AGENTS.md"), path.join(DIST, "agents-md", "AGENTS.md"), []);
+
+  // Claude marketplace plugin artifacts. The plugin cannot install repo-root
+  // `skills/`, so shared content lives under plugin/shared/skills and entry-point
+  // wrappers are rewritten to that plugin-local path.
+  syncDir(SHARED_SKILLS_SRC, PLUGIN_SHARED_ROOT);
+  rmrf(PLUGIN_SKILLS_ROOT);
+  fs.mkdirSync(PLUGIN_SKILLS_ROOT, { recursive: true });
+  for (const name of TOP_LEVEL_SKILLS) {
+    const src = path.join(CLAUDE_SKILLS_SRC, name);
+    assertExists(src, "Claude skill " + name);
     const dst = path.join(PLUGIN_SKILLS_ROOT, name);
-    rmrf(dst);
     copyDir(src, dst);
+    copyFileWithReplacements(
+      path.join(src, "SKILL.md"),
+      path.join(dst, "SKILL.md"),
+      [["../../../skills/", "../../shared/skills/"]]
+    );
   }
 
   // sanity: required portable artifacts present
@@ -48,6 +87,9 @@ function main() {
     path.join(REPO, "dist", "marketplace", ".claude-plugin", "marketplace.json"),
     path.join(PLUGIN_DIR, ".claude-plugin", "plugin.json"),
     path.join(REPO, "dist", "agents-md", "AGENTS.md"),
+    path.join(REPO, "dist", "shared", "skills"),
+    path.join(REPO, "dist", "claude", "skills"),
+    path.join(REPO, "dist", "codex", ".agents", "skills"),
     path.join(REPO, "dist", "cursor", ".cursor", "rules", "e2e-engineering.mdc")
   ];
   const missing = required.filter((p) => !fs.existsSync(p));
@@ -56,19 +98,18 @@ function main() {
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
 
-  // expert reviewer agents (ADR 0022) — sync .claude/agents/ → <plugin>/agents/
-  const agentsSrc = path.join(SKILLS_SRC, "..", "agents");
-  if (fs.existsSync(agentsSrc)) {
-    const agentsDst = path.join(PLUGIN_DIR, "agents");
-    rmrf(agentsDst);
-    copyDir(agentsSrc, agentsDst);
-    process.stdout.write("build-dist: synced agents → " + path.relative(REPO, agentsDst) + "\n");
-  } else {
-    process.stderr.write("build-dist: WARNING — .claude/agents not found, skipping\n");
-  }
+  syncDir(CLAUDE_AGENTS_SRC, path.join(PLUGIN_DIR, "agents"));
 
   const count = countFiles(PLUGIN_SKILLS_ROOT);
-  process.stdout.write("build-dist: synced " + count + " skill file(s) [" + SKILLS.join(", ") + "] → " + path.relative(REPO, PLUGIN_SKILLS_ROOT) + "\n");
+  process.stdout.write("build-dist: synced " + count + " marketplace entry file(s) [" + TOP_LEVEL_SKILLS.join(", ") + "] → " + path.relative(REPO, PLUGIN_SKILLS_ROOT) + "\n");
+  process.stdout.write("build-dist: synced shared runtime → " + path.relative(REPO, path.join(DIST, "shared", "skills")) + "\n");
+  process.stdout.write("build-dist: synced Codex runtime → " + path.relative(REPO, path.join(DIST, "codex", ".agents", "skills")) + "\n");
+}
+
+function syncDir(src, dst) {
+  rmrf(dst);
+  copyDir(src, dst);
+  process.stdout.write("build-dist: synced " + path.relative(REPO, src) + " → " + path.relative(REPO, dst) + "\n");
 }
 
 function countFiles(dir) {

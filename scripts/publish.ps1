@@ -10,9 +10,10 @@
          dist/marketplace/.claude-plugin/marketplace.json        (metadata.version)
          dist/marketplace/plugins/e2e-engineering/.claude-plugin/plugin.json
     3. npm run build        (scripts/build-dist.js — syncs skills + agents into dist/)
-    4. git commit + tag v<version>   (unless -NoGit)
-    5. npm publish --access public
-    6. npm run publish:marketplace -- --remote <url> --push --force
+    4. npm run validate     (links, role names, generated dist freshness, JSON manifests)
+    5. git commit + tag v<version>   (unless -NoGit)
+    6. npm publish --access public
+    7. npm run publish:marketplace -- --remote <url> --push --force
 
   Auto bump heuristic (compares the last git tag against the working tree):
     MAJOR  — a published top-level skill dir (.claude/skills/<name>/) was REMOVED
@@ -53,8 +54,13 @@ function Run([string]$exe, [string[]]$argv) {
 $pkgPath = Join-Path $repo "package.json"
 $mktPath = Join-Path $repo "dist/marketplace/.claude-plugin/marketplace.json"
 $plgPath = Join-Path $repo "dist/marketplace/plugins/e2e-engineering/.claude-plugin/plugin.json"
-foreach ($p in @($pkgPath, $mktPath, $plgPath)) {
+$manifestPaths = @($pkgPath, $mktPath, $plgPath)
+foreach ($p in $manifestPaths) {
     if (-not (Test-Path $p)) { throw "manifest missing: $p (run npm run build first)" }
+}
+$originalManifestText = @{}
+foreach ($p in $manifestPaths) {
+    $originalManifestText[$p] = Get-Content $p -Raw
 }
 
 # --- current version (npm is the source of truth) ---
@@ -127,12 +133,21 @@ Set-JsonVersion $mktPath $newVersion
 Step "Build (npm run build)"
 Run "npm" @("run", "build")
 
+Step "Validate (npm run validate)"
+Run "npm" @("run", "validate")
+
 # --- publish ---
 if ($DryRun) {
     Step "DRY RUN — npm publish --dry-run (no push, no tag)"
-    Run "npm" @("publish", "--access", "public", "--dry-run")
-    Write-Host "`nDry run complete. Nothing published, no git changes committed." -ForegroundColor Yellow
-    Write-Host "Manifests were stamped to $newVersion on disk — revert with: git checkout -- package.json dist/" -ForegroundColor Yellow
+    try {
+        Run "npm" @("publish", "--access", "public", "--dry-run")
+    } finally {
+        foreach ($p in $manifestPaths) {
+            Set-Content -Path $p -Value $originalManifestText[$p] -NoNewline -Encoding utf8
+        }
+    }
+    Write-Host "`nDry run complete. Nothing published, pushed, tagged, or committed." -ForegroundColor Yellow
+    Write-Host "Version stamps were restored. Build output may still be refreshed in dist/." -ForegroundColor Yellow
     return
 }
 
