@@ -3,19 +3,19 @@ name: e2e-flight
 description: Headless implementation worker for the e2e-engineering flow. Implements exactly ONE Task from the queue then exits — no external loop, no context monitoring. Within the spawn it IS the orchestrator: fans out each slice to a sub-agent in its own worktree (impl wave), runs an expert-review wave before merge, then self-reviews and parks human-QA. Headless counterpart to the interactive front door /e2e-engineering. Use when the user says "e2e-flight", "/e2e-flight", "flight", "drain the queue", "run the flight loop", or "implement the selected tasks".
 ---
 
-# e2e-flight — one-Task implementation worker
+# e2e-flight — one-Task implementation worker (Codex runtime)
 
 Sibling to [/e2e-engineering](../e2e-engineering/SKILL.md). Headless implementation. Read CONTEXT.md for any term. ADR: [0022](../../../docs/adr/0022-flight-one-task-per-spawn-no-loop-no-checkpoint.md). Process spec: [prototype/e2e-flight-process/design.md](../../../prototype/e2e-flight-process/design.md).
 
 **One Task per invocation, then exit.** No loop, no respawn, no context monitoring. Re-invoke `/e2e-flight` for next Task. Task finishes in one spawn or stays resumable via `queue.json`/`prd.json` status.
 
-**Token rule.** Blowup cause: fan-out not firing → 126 inline calls → 227-turn O(N²) chain. Fix: fan-out FORCED (Step 0), inline slice-impl = hard STOP (Step 3). Sub-agents hold heavy tool calls, return summaries — keeps orchestrator context small without checkpoint.
+**Token rule.** Blowup cause: fan-out not firing → 126 inline calls → 227-turn O(N²) chain. Fix: fan-out FORCED (Step 0), inline slice-impl = hard STOP (Step 3). Sub-agents hold heavy tool calls, return manifests — keeps orchestrator context small without checkpoint.
 
 ---
 
 ## Step 0 — bootstrap + forcing mechanism (FIRST, always)
 
-1. Load dispatch tools. `ToolSearch` → load `Agent` + `EnterWorktree`. Either fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. NEVER fall back to inline slice work.
+1. **Capability probe (fail-closed).** Static requirement: `spawn_agent` / `spawn_agents_on_csv`. Live probe: attempt no-op spawn (trivial exit instruction); fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. NEVER fall back to inline slice work.
 2. No driver, no lock, no context monitoring. No handoff docs, no checkpoint, no respawn.
 3. Orchestrator output = caveman-ultra, essential only (token discipline).
 
@@ -38,10 +38,10 @@ Task root: `.e2e-engineering/tasks/<id>/`.
 Read (offset/limit, only needed sections): `tasks/<id>/prd.json` (slice DAG) + `tasks/<id>/progress.txt`.
 
 - **2.1 — structure missing/invalid** (no prd.json, no DAG, no test-cases): do NOT improvise. Tell user to plan via `/e2e-engineering`, EXIT.
-- **2.2 — prior in-progress/stall mess** (worktrees on disk, slices in-flight with no commit): propose reconciliation, EXIT — never blindly resume dirty state.
-- **Clean reconcile**: slice in-flight with no commit → reset to `todo`. Proceed.
+- **2.2 — prior in-progress/stall mess** (slices in-flight with no active spawn): propose reconciliation, EXIT — never blindly resume dirty state.
+- **Clean reconcile**: slice in-flight with no active spawn → reset to `todo`. Proceed.
 
-**Docker env cache (brownfield/docker projects).** Read `docker-compose.yml` (+ `docker-compose.override.yml` if present) ONCE. Extract required env/config files: `env_file` entries + volume-mounted config paths. Cache this list — used by every `EnterWorktree` call in Step 3. Do NOT re-read per slice.
+**Docker env cache (brownfield/docker projects).** Read `docker-compose.yml` (+ `docker-compose.override.yml` if present) ONCE. Extract required env/config files: `env_file` entries + volume-mounted config paths. Cache this list — included in every sub-agent spawn manifest in Step 3. Do NOT re-read per slice.
 
 **Codebase-map read (brownfield only).** If `tasks/<id>/codebase-map.md` exists, read §1–§3 ONCE here (use §Index at top of file for offset/limit). Hold in orchestrator context. Do NOT re-read in Steps 3 or 4.
 
@@ -54,26 +54,28 @@ Sole writer: only orchestrator writes `prd.json` + `progress.txt` + evidence sid
 Repeat until DAG drained (every slice `done` or `blocked`):
 
 1. **Compute ready set** — slices whose `depends_on` are all `done` AND own `status: todo`.
-2. **Fan-out impl wave** — dispatch each ready slice to its OWN git worktree + sub-agent (`EnterWorktree` + `Agent`). Run [tdd](../../../skills/e2e-engineering/impl/tdd.md). Parallel ONLY across disjoint file sets (same-file slices serialized by `depends_on` in to-issues). Inject: [constitution](../../../skills/e2e-engineering/constitution.md) + slice (acceptanceCriteria, sliceType, `integration` decision) + testCases + (brownfield) SCOPED slice of `ARCHITECTURE.md` (use §Index for offset/limit on the relevant sections).
+2. **Fan-out impl wave** — write ready-set manifest JSON (slice ids + injection payload), then dispatch via `spawn_agents_on_csv` (or `spawn_agent`/`wait_agent`). Codex manages worktrees internally. Parallel ONLY across disjoint file sets (same-file slices serialized by `depends_on` in to-issues). Each sub-agent injection: [constitution](../../../skills/e2e-engineering/constitution.md) + slice (acceptanceCriteria, sliceType, `integration` decision) + testCases + (brownfield) SCOPED slice of `ARCHITECTURE.md` (use §Index for offset/limit on relevant sections).
 
-   **Worktree env/config bootstrap** (immediately after `EnterWorktree`, before sub-agent dispatch). Copy cached docker env file list (from Step 2) into the worktree. Use `cp`/`Copy-Item`. Do NOT stage/commit these files — untracked, cleaned by `ExitWorktree`. Required file missing from main tree → sub-agent surfaces it as a blocker in slice result manifest, does not silently skip.
+   **Worktree env/config bootstrap** (included in spawn manifest). Pass cached docker env file list (from Step 2) in each sub-agent's spawn payload. Sub-agent copies into its worktree on start. Do NOT stage/commit these files — untracked only. Required file missing from main tree → sub-agent surfaces it as blocker in slice result manifest; does not silently skip.
 
-   Sub-agents return **slice result manifest** ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)): `{ sliceId, status, summary, testsPassed, branch, findings[] }`.
+   Sub-agents run [tdd](../../../skills/e2e-engineering/impl/tdd.md). Each returns a **slice result manifest** ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)): `{ sliceId, status, summary, testsPassed, branch, findings[] }`.
 
    - **GATE 2 (hard)** — failing test before production code (inside tdd).
    - **GATE 3 (hard)** — 3 failed fixes → re-dispatch ONCE with [systematic-debugging](../../../skills/e2e-engineering/impl/systematic-debugging.md); still red → mark slice `blocked`, keep draining.
    - **DO NOT do slice-impl inline.** Orchestrator writing slice production code = hard red-flag STOP.
 
-3. **Expert-review wave (in worktree, BEFORE merge).** Slice green → dispatch role reviewer agents **in parallel** by `sliceType` (all agents for a given slice fire simultaneously in one message):
-   - schema/db → [dba](../../agents/dba.md) + [backend-architect](../../agents/backend-architect.md)
-   - api/logic → [backend-architect](../../agents/backend-architect.md) + [test-reviewer](../../agents/test-reviewer.md)
-   - ui → [frontend-reviewer](../../agents/frontend-reviewer.md) + frontend lens of [backend-architect](../../agents/backend-architect.md)
-   - every slice → [test-reviewer](../../agents/test-reviewer.md) (AC coverage)
+3. **Expert-review wave (artifact-driven, BEFORE merge).** Slice green → orchestrator builds **review bundle** (artifact package: diff + PRD story + [constitution](../../../skills/e2e-engineering/constitution.md) + test evidence + ARCHITECTURE slice). Dispatch reviewer agents **in parallel** via `spawn_agents_on_csv` / `spawn_agent` by `sliceType`:
+   - schema/db → `dba` + `backend-architect`
+   - api/logic → `backend-architect` + `test-reviewer`
+   - ui → `frontend-reviewer` + `backend-architect` (frontend lens)
+   - every slice → `test-reviewer` (AC coverage)
 
-   Reviewers are read-only and independent — always parallel, never serial. Each reviews slice vs PRD + [constitution](../../../skills/e2e-engineering/constitution.md) + (brownfield) ARCHITECTURE slice. Each returns **reviewer result**: `{ reviewerId, sliceId, findings[] }`. Findings: **Critical / Important / Minor**. Critical/Important → bounce to impl sub-agent, re-review after fix. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, tear down worktree, keep draining. Minor → note, don't block.
+   Agent names above require Phase 3 (`~/.codex/agents/` wrappers). Reviewers receive review bundle only — NOT worktree path (Codex worktree isolation is internal; path coupling fails silently). Each returns **reviewer result** ([schema](../../../skills/e2e-engineering/schemas/review-result.json.md)): `{ reviewerId, sliceId, findings[] }`.
+
+   Reviewers read-only, independent — always parallel, never serial. Findings: **Critical / Important / Minor**. Critical/Important → bounce to impl sub-agent, re-review after fix. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, keep draining. Minor → note, don't block.
 
 4. **lint + compile** — orchestrator commands (not agents). Run project lint + build/typecheck; reconcile failures before merge.
-5. **Merge** slice branch → Task branch (resolve conflicts, never discard work). Remove worktree immediately (`ExitWorktree`) — life ends at merge.
+5. **Merge** slice branch → Task branch via `git merge`. Resolve conflicts (never discard work). Codex manages worktrees internally.
 6. **Record + persist sidecars** (sole writer):
    - Write `tasks/<id>/manifests/<story-id>/slice-result.json` ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)) from sub-agent's returned manifest.
    - Write `tasks/<id>/manifests/<story-id>/review-result.json` ([schema](../../../skills/e2e-engineering/schemas/review-result.json.md)) from combined reviewer results (all parallel reviewers for this slice).
@@ -121,7 +123,7 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 
 ## Red flags (stop)
 - Slice-impl inline instead of sub-agent dispatch (blowup cause — Step 0 forces fan-out; inline = STOP).
-- Fallback to inline when `Agent`/`EnterWorktree` won't load (stall + exit).
+- Fallback to inline when `spawn_agent`/`spawn_agents_on_csv` unavailable (stall + exit).
 - Re-introducing loop / checkpoint / handoff / 65% monitoring (ADR 0022 — gone).
 - Running [human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) headless (write qa-signoff.md instead).
 - `git restore` wiping already-merged slices (uncommitted only).
@@ -130,3 +132,4 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 - Re-reading docker config or codebase-map per-slice (read ONCE in Step 2).
 - Staging/committing env/config files in worktree branch (untracked only).
 - Touching another Task's `tasks/<id>/` state.
+- Passing worktree path to reviewer agents — pass review bundle (artifact package) instead.

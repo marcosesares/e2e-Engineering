@@ -3,7 +3,7 @@ name: e2e-engineering
 description: Interactive front door for the e2e-engineering flow — drives a Task from idea to an approved PRD (pre-implementation), launches headless implementation via /e2e-flight, and runs the human QA sign-off. Detects phase and task type, sequences sub-skills, plans the PRD with expert agents (UI designer / backend architect / DBA) so it is architecture-aware, and enforces the hard gates. Handles greenfield, feature, bugfix, and refactor on new or existing codebases, plus a one-time `adopt` mode for onboarding an in-progress project. Implementation itself runs in /e2e-flight (ADR 0022 — one Task per spawn, no loop, no context monitoring). Use when the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "/e2e-engineering", "implement feature <name>", "write e2e for <feature>", "build this end to end", "run the full flow", or otherwise wants the complete engineering pipeline rather than a single isolated step.
 ---
 
-# e2e-engineering — orchestrator
+# e2e-engineering — orchestrator (Codex runtime)
 
 Master skill. Detect phase + task type, route mode, sequence sub-skills, drive loop, enforce gates. Read CONTEXT.md for any term.
 
@@ -16,6 +16,13 @@ Interactive front door (human-driven pre-implementation + batched QA sign-off). 
 Durable project docs at repo ROOT: `CONTEXT.md` (glossary), [constitution](../../../skills/e2e-engineering/constitution.md) (generic engineering standards), `ARCHITECTURE.md` (project-specific structure + conventions — schema: [architecture](../../../skills/e2e-engineering/schemas/architecture.md)). ARCHITECTURE.md written ONLY in human phases (pre-impl seed + post-impl human-QA amend); implementation loop reads it, never writes it. See ADR 0013.
 
 **Sole-writer rule:** ONLY orchestrator writes `prd.json` + `progress.txt` + evidence sidecars (`manifests/<story-id>/`). Sub-agents return slice result manifests; never touch shared state.
+
+---
+
+## Capability check (FIRST, always)
+
+Codex runtime. Static requirement: `spawn_agent` / `spawn_agents_on_csv` primitives.
+Live probe: attempt no-op spawn at startup. Fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. NEVER inline slice work as fallback.
 
 ---
 
@@ -50,7 +57,7 @@ Sequence (bracketed = conditional): **[map-codebase? (brownfield)] → grill-wit
 3. [research](../../../skills/e2e-engineering/pre-impl/research.md) — only if task leans on external APIs / unfamiliar libs. Produces `research.md` (rots).
 4. [prototype](../../../skills/e2e-engineering/pre-impl/prototype.md) — only if taste/UX/state-machine uncertainty needs concrete feedback. Throwaway. ui-branch or logic-branch.
 5. [to-prd](../../../skills/e2e-engineering/pre-impl/to-prd.md) — convert grill-with-docs notes into formal PRD → writes `prd.json`. Owns own interview step (no double-interview). Refactor-shaped stories allowed. Captures testing-decisions → test-cases.
-   - **Plan with expert agents → architecture-aware PRD.** Before finalizing, consult expert reviewer agents as advisors against `ARCHITECTURE.md` + `constitution`: [backend-architect](../../agents/backend-architect.md), [dba](../../agents/dba.md), [ui-designer](../../agents/ui-designer.md). Same agents later review built slices in [/e2e-flight](../e2e-flight/SKILL.md).
+   - **Plan with expert agents → architecture-aware PRD.** Before finalizing, consult reviewer agents against `ARCHITECTURE.md` + [constitution](../../../skills/e2e-engineering/constitution.md). **Inline default** for normal PRDs. **Manifest fan-out for high-risk** (schema-heavy, security, cross-service, complex UX, or explicit user request): write expert-consult manifest → spawn `backend-architect`, `dba`, `frontend-reviewer` in parallel via `spawn_agents_on_csv` → collect findings → apply to PRD. Agent wrappers materialized in Phase 3 (`~/.codex/agents/`). Same agents review built slices in [/e2e-flight](../e2e-flight/SKILL.md).
 
 **HARD GATE 1 — PRD approved → implementation.** Present PRD; require explicit human consent before any code. Do not proceed on silence. STOP + WAIT. Never infer approval from "looks good" on earlier draft.
 
@@ -78,24 +85,23 @@ Entry: PRD approved (gate 1 passed). **Implementation runs in [/e2e-flight](../e
 
 ### The loop (skill-driven, in-session — ADR 0005)
 
-**Worktree reconciliation (FIRST, every loop entry — incl. fresh-session resume).** Run `git worktree list`, reconcile against prd.json before computing ready set:
-- Worktree whose story is `done` → already merged; remove it (`ExitWorktree`).
-- Worktree whose story is `todo`/`in-progress` → abandoned in-flight slice. Tear down (discard un-merged branch if no committed work; if commits exist, note + remove — story re-dispatches clean). Reset story to `todo`.
-- Story marked in-flight in prd.json but NO worktree on disk → reset to `todo`.
+**Worktree reconciliation (FIRST, every loop entry — incl. fresh-session resume).** Codex manages worktrees internally. Reconcile prd.json slice status before computing ready set:
+- Slice `done` → already merged; Codex cleaned worktree.
+- Slice `in-progress` with no spawn active → abandoned. Reset to `todo`.
+- Slice marked in-flight in prd.json but no active spawn → reset to `todo`.
 
 Repeat until COMPLETE (all stories `status: done`):
 
 1. **Compute ready set** — stories whose `depends_on` all `done` AND own `status: todo`.
-2. **Fan-out** — dispatch each ready story to OWN git worktree + subagent (`EnterWorktree`). Inject [constitution](../../../skills/e2e-engineering/constitution.md) + story (incl. `integration` decision) + testCases. Brownfield / ARCHITECTURE.md exists → also inject story's SCOPED slice of ARCHITECTURE.md (§Index for offset/limit — this layer's naming + ownership + anti-patterns, NOT whole doc). Subagent runs [tdd](../../../skills/e2e-engineering/impl/tdd.md): gap-check → red-green-refactor → automate FEATURE e2e → return SUMMARY ONLY.
+2. **Fan-out** — dispatch each ready story to own sub-agent via `spawn_agents_on_csv` (or `spawn_agent`/`wait_agent`). Codex manages worktrees internally. Parallel ONLY across disjoint file sets (same-file slices serialized by `depends_on` in to-issues). Inject [constitution](../../../skills/e2e-engineering/constitution.md) + story (incl. `integration` decision) + testCases. Brownfield / ARCHITECTURE.md exists → also inject story's SCOPED slice of ARCHITECTURE.md (§Index for offset/limit — this layer's naming + ownership + anti-patterns, NOT whole doc). Subagent runs [tdd](../../../skills/e2e-engineering/impl/tdd.md): gap-check → red-green-refactor → automate FEATURE e2e → return SUMMARY ONLY.
    - **HARD GATE 2 — TDD red before green.** Each subagent writes failing test before production code. Enforced inside tdd.md.
    - **HARD GATE 3 — debug escalation.** Subagent 3 failed fixes → orchestrator re-dispatches ONCE with [systematic-debugging](../../../skills/e2e-engineering/impl/systematic-debugging.md). Still red → mark story `blocked`, append `## Blocked` in progress.txt, keep draining. Escalate to human ONLY on stall. Emit `<e2e-stall reason="all-stories-blocked" />` before escalating.
 3. **Fan-in (orchestrator, serial — sole writer):** per returned summary, run per-slice review's two ordered stages, then merge-readiness check, then merge.
    - **Stage 1 — spec-compliance check.** Slice satisfies story's acceptanceCriteria EXACTLY? Verdict `✅ spec-compliant` or `❌ issues found`. Issues → bounce back to slice subagent, re-run stage 1 after fix. Do NOT advance to stage 2 until spec-compliant.
    - **Stage 2 — quality check.** Slice checked against [constitution](../../../skills/e2e-engineering/constitution.md) AND (ARCHITECTURE.md exists) ownership/naming/integration rules — catches new class at URL existing class owns, duplicate component file, second API-client key, naming break. Findings Critical / Important / Minor. Critical/Important → bounce back, re-run after fix. Minor → note. Do NOT advance to merge-readiness until stage 2 clears.
-   - **Bounce ceiling (token-runaway guard).** Stage-1 or stage-2 bounce capped at **3 round-trips**. Still failing after 3 → STOP: mark story `blocked`, append `## Blocked` in progress.txt, tear down worktree, keep draining.
-   - **Merge-readiness check.** Worktree no uncommitted changes; slice's feature E2E + affected tests pass; branch ahead of baseBranch. Any fail → bounce back (same 3-round-trip ceiling), do not merge.
-   - Merge worktree branch into baseBranch. Resolve conflicts (never discard work).
-   - **Remove worktree** (`ExitWorktree`) immediately after successful merge — life ends at merge.
+   - **Bounce ceiling (token-runaway guard).** Stage-1 or stage-2 bounce capped at **3 round-trips**. Still failing after 3 → STOP: mark story `blocked`, append `## Blocked` in progress.txt, keep draining.
+   - **Merge-readiness check.** No uncommitted changes; slice's feature E2E + affected tests pass; branch ahead of baseBranch. Any fail → bounce back (same 3-round-trip ceiling), do not merge.
+   - Merge worktree branch into baseBranch via `git merge`. Resolve conflicts (never discard work). Codex manages worktrees internally.
    - **Persist sidecars + pointers** (sole writer): write `manifests/<story-id>/slice-result.json` ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)) from sub-agent manifest; write `manifests/<story-id>/review-result.json` ([schema](../../../skills/e2e-engineering/schemas/review-result.json.md)) from reviewer results. Update prd.json story `resultManifestPath` + `reviewManifestPath`. **Status authority:** reconcile sidecar `status` at fan-in; prd.json is sole source of truth.
    - Write `status: done` in prd.json.
    - Append `## Story Log` line to progress.txt. Stage durable learnings under `## Pending Amendments`.
