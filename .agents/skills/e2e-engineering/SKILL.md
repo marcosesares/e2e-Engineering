@@ -1,6 +1,6 @@
 ---
 name: e2e-engineering
-description: Interactive front door for the e2e-engineering flow — drives a Task from idea to an approved PRD (pre-implementation), launches headless implementation via /e2e-flight, and runs the human QA sign-off. Detects phase and task type, sequences sub-skills, plans the PRD with expert agents (UI designer / backend architect / DBA) so it is architecture-aware, and enforces the hard gates. Handles greenfield, feature, bugfix, and refactor on new or existing codebases, plus a one-time `adopt` mode for onboarding an in-progress project. Implementation itself runs in /e2e-flight (ADR 0022 — one Task per spawn, no loop, no context monitoring). Use when the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "/e2e-engineering", "implement feature <name>", "write e2e for <feature>", "build this end to end", "run the full flow", or otherwise wants the complete engineering pipeline rather than a single isolated step.
+description: Interactive front door for the e2e-engineering flow — drives a Task from idea to an approved PRD (pre-implementation), launches headless implementation via /e2e-flight, and runs the human QA sign-off. Detects phase and task type, sequences sub-skills, plans the PRD with expert agents (UI designer / backend architect / DBA) so it is architecture-aware, and enforces the hard gates. Handles greenfield, feature, bugfix, and refactor on new or existing codebases, plus a one-time `adopt` mode for onboarding an in-progress project. Implementation itself runs in /e2e-flight (ADR 0022 — one Task per spawn, no loop, no context monitoring). Use when the user says "e2e-engineering", "e2e-eng", "ship-it", "ship it", "/e2e-engineering", "implement feature", "write e2e for a feature", "build this end to end", "run the full flow", or otherwise wants the complete engineering pipeline rather than a single isolated step.
 ---
 
 # e2e-engineering — orchestrator (Codex runtime)
@@ -19,17 +19,16 @@ Durable project docs at repo ROOT: `CONTEXT.md` (glossary), [constitution](../..
 
 ---
 
-## Capability check (FIRST, always)
+## Capability check (implementation paths only)
 
-Codex runtime. Static requirement: `spawn_agent` / `spawn_agents_on_csv` primitives.
-Live probe: attempt no-op spawn at startup. Branch-visibility probe: disposable worker branch commit must be visible to orchestrator before implementation. Spawn fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. Branch visibility fails → `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. NEVER inline slice work or require full text patches as fallback.
+Codex runtime. Required before implementation launch/resume only. Skip for `/e2e-engineering qa` and `/e2e-engineering adopt`; those are human/state flows, no worker fan-out. Static requirement: `spawn_agent` / `spawn_agents_on_csv` primitives. Live probe: attempt no-op spawn before implementation. Branch-visibility probe: disposable worker branch commit must be visible to orchestrator before implementation. Spawn fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. Branch visibility fails → `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. NEVER inline slice work or require full text patches as fallback.
 
 ---
 
 ## Step 0 — route mode
 
 - User invoked `/e2e-engineering adopt` → run [adopt](../../../skills/e2e-engineering/adopt.md). One-time onboarding, not per-task flow. Stop here.
-- User invoked `/e2e-engineering qa`, OR `queue.json` has any Task `status:pending-qa` → run **QA sign-off session** ([human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) multi-Task mode): walk every pending-qa Task's [qa-signoff.md](../../../skills/e2e-engineering/schemas/qa-signoff.md), sign off (→ `done`), route findings through [triage](../../../skills/e2e-engineering/impl/triage.md) into new queue Tasks. Offer this first when pending-qa work exists. Stop here when done.
+- User invoked `/e2e-engineering qa`, OR `queue.json` has any Task `status:pending-qa` → run **QA sign-off session** ([human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) multi-Task mode): read `queue.json`, each pending Task's [qa-signoff.md](../../../skills/e2e-engineering/schemas/qa-signoff.md), and `progress.txt`; present full Manual test script (steps + expected, not title summary); sign off (→ `done`) only after human results; route findings through [triage](../../../skills/e2e-engineering/impl/triage.md) into new queue Tasks. Offer this first when pending-qa work exists. Stop here when done.
 - Otherwise → per-feature flow below (spec → gate 1 → queue → launch flight).
 
 ## Step 1 — detect phase + task type
