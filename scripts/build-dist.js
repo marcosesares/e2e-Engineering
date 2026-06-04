@@ -17,6 +17,7 @@ const CLAUDE_SKILLS_SRC = path.join(REPO, ".claude", "skills");
 const CODEX_SKILLS_SRC = path.join(REPO, ".agents", "skills");
 const CLAUDE_AGENTS_SRC = path.join(REPO, ".claude", "agents");
 const TOP_LEVEL_SKILLS = ["e2e-engineering", "e2e-flight", "grill-with-docs"];
+const SHARED_SKILLS = ["e2e-engineering", "grill-with-docs"];
 const DIST = path.join(REPO, "dist");
 const PLUGIN_DIR = path.join(REPO, "dist", "marketplace", "plugins", "e2e-engineering");
 const PLUGIN_SKILLS_ROOT = path.join(PLUGIN_DIR, "skills");
@@ -27,7 +28,7 @@ function copyDir(src, dst) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
+    if (entry.isDirectory() || fs.statSync(s).isDirectory()) copyDir(s, d);
     else fs.copyFileSync(s, d);
   }
 }
@@ -58,16 +59,16 @@ function main() {
   assertExists(path.join(REPO, "AGENTS.md"), "AGENTS.md router");
 
   // npm installer artifacts
-  syncDir(SHARED_SKILLS_SRC, path.join(DIST, "shared", "skills"));
-  syncDir(CLAUDE_SKILLS_SRC, path.join(DIST, "claude", "skills"));
+  syncSkillDirs(SHARED_SKILLS_SRC, path.join(DIST, "shared", "skills"), SHARED_SKILLS, "shared skills");
+  syncSkillDirs(CLAUDE_SKILLS_SRC, path.join(DIST, "claude", "skills"), TOP_LEVEL_SKILLS, "Claude skills");
   syncDir(CLAUDE_AGENTS_SRC, path.join(DIST, "claude", "agents"));
-  syncDir(CODEX_SKILLS_SRC, path.join(DIST, "codex", ".agents", "skills"));
+  syncSkillDirs(CODEX_SKILLS_SRC, path.join(DIST, "codex", ".agents", "skills"), TOP_LEVEL_SKILLS, "Codex skills");
   copyFileWithReplacements(path.join(REPO, "AGENTS.md"), path.join(DIST, "agents-md", "AGENTS.md"), []);
 
   // Claude marketplace plugin artifacts. The plugin cannot install repo-root
   // `skills/`, so shared content lives under plugin/shared/skills and entry-point
   // wrappers are rewritten to that plugin-local path.
-  syncDir(SHARED_SKILLS_SRC, PLUGIN_SHARED_ROOT);
+  syncSkillDirs(SHARED_SKILLS_SRC, PLUGIN_SHARED_ROOT, SHARED_SKILLS, "marketplace shared skills");
   rmrf(PLUGIN_SKILLS_ROOT);
   fs.mkdirSync(PLUGIN_SKILLS_ROOT, { recursive: true });
   for (const name of TOP_LEVEL_SKILLS) {
@@ -110,6 +111,17 @@ function syncDir(src, dst) {
   rmrf(dst);
   copyDir(src, dst);
   process.stdout.write("build-dist: synced " + path.relative(REPO, src) + " → " + path.relative(REPO, dst) + "\n");
+}
+
+function syncSkillDirs(srcRoot, dstRoot, names, label) {
+  rmrf(dstRoot);
+  fs.mkdirSync(dstRoot, { recursive: true });
+  for (const name of names) {
+    const src = path.join(srcRoot, name);
+    assertExists(src, label + " " + name);
+    copyDir(src, path.join(dstRoot, name));
+  }
+  process.stdout.write("build-dist: synced " + label + " → " + path.relative(REPO, dstRoot) + "\n");
 }
 
 function countFiles(dir) {

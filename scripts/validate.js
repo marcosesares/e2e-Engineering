@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 
 const REPO = path.resolve(__dirname, "..");
+const TOP_LEVEL_SKILLS = ["e2e-engineering", "e2e-flight", "grill-with-docs"];
+const SHARED_SKILLS = ["e2e-engineering", "grill-with-docs"];
 
 const errors = [];
 
@@ -33,7 +35,7 @@ function listFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...listFiles(p));
+    if (entry.isDirectory() || fs.statSync(p).isDirectory()) out.push(...listFiles(p));
     else out.push(p);
   }
   return out;
@@ -63,6 +65,21 @@ function compareDirs(src, dst, label) {
       continue;
     }
     if (read(s) !== read(d)) fail(label + ": stale dist file " + rel(d));
+  }
+}
+
+function compareSkillDirs(srcRoot, dstRoot, names, label) {
+  if (!exists(dstRoot)) return fail(label + ": missing dist " + rel(dstRoot));
+
+  const expected = new Set(names);
+  for (const entry of fs.readdirSync(dstRoot, { withFileTypes: true })) {
+    if (!expected.has(entry.name)) {
+      fail(label + ": extra stale dist entry " + rel(path.join(dstRoot, entry.name)));
+    }
+  }
+
+  for (const name of names) {
+    compareDirs(path.join(srcRoot, name), path.join(dstRoot, name), label + " " + name);
   }
 }
 
@@ -137,17 +154,17 @@ function validateNoDeprecatedRoles() {
 }
 
 function validateDistFresh() {
-  compareDirs(path.join(REPO, "skills"), path.join(REPO, "dist/shared/skills"), "shared skills dist");
-  compareDirs(path.join(REPO, ".claude/skills"), path.join(REPO, "dist/claude/skills"), "Claude skills dist");
+  compareSkillDirs(path.join(REPO, "skills"), path.join(REPO, "dist/shared/skills"), SHARED_SKILLS, "shared skills dist");
+  compareSkillDirs(path.join(REPO, ".claude/skills"), path.join(REPO, "dist/claude/skills"), TOP_LEVEL_SKILLS, "Claude skills dist");
   compareDirs(path.join(REPO, ".claude/agents"), path.join(REPO, "dist/claude/agents"), "Claude agents dist");
-  compareDirs(path.join(REPO, ".agents/skills"), path.join(REPO, "dist/codex/.agents/skills"), "Codex skills dist");
+  compareSkillDirs(path.join(REPO, ".agents/skills"), path.join(REPO, "dist/codex/.agents/skills"), TOP_LEVEL_SKILLS, "Codex skills dist");
   compareFile(path.join(REPO, "AGENTS.md"), path.join(REPO, "dist/agents-md/AGENTS.md"), "AGENTS.md dist");
 
   const plugin = path.join(REPO, "dist/marketplace/plugins/e2e-engineering");
-  compareDirs(path.join(REPO, "skills"), path.join(plugin, "shared/skills"), "marketplace shared skills");
+  compareSkillDirs(path.join(REPO, "skills"), path.join(plugin, "shared/skills"), SHARED_SKILLS, "marketplace shared skills");
   compareDirs(path.join(REPO, ".claude/agents"), path.join(plugin, "agents"), "marketplace Claude agents");
 
-  for (const skillDir of fs.readdirSync(path.join(REPO, ".claude/skills"))) {
+  for (const skillDir of TOP_LEVEL_SKILLS) {
     const src = path.join(REPO, ".claude/skills", skillDir, "SKILL.md");
     if (!exists(src)) continue;
     const dst = path.join(plugin, "skills", skillDir, "SKILL.md");
@@ -174,9 +191,11 @@ function validateJson() {
 }
 
 validateMarkdownLinks([
-  ...listMarkdownFiles(path.join(REPO, ".claude/skills")),
-  ...listMarkdownFiles(path.join(REPO, ".agents/skills")),
-  ...listMarkdownFiles(path.join(REPO, "dist/marketplace/plugins/e2e-engineering/skills"))
+  ...TOP_LEVEL_SKILLS.flatMap((skill) => listMarkdownFiles(path.join(REPO, ".claude/skills", skill))),
+  ...TOP_LEVEL_SKILLS.flatMap((skill) => listMarkdownFiles(path.join(REPO, ".agents/skills", skill))),
+  ...TOP_LEVEL_SKILLS.flatMap((skill) =>
+    listMarkdownFiles(path.join(REPO, "dist/marketplace/plugins/e2e-engineering/skills", skill))
+  )
 ]);
 validateAgentsRouter();
 validateNoDeprecatedRoles();

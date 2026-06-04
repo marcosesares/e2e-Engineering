@@ -16,9 +16,10 @@ Sibling to [/e2e-engineering](../e2e-engineering/SKILL.md). Headless implementat
 
 ## Step 0 — bootstrap + forcing mechanism (FIRST, always)
 
-1. **Capability probe (fail-closed).** Static requirement: `spawn_agent` / `spawn_agents_on_csv`. Live probe: attempt no-op spawn (trivial exit instruction); fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. Branch-visibility probe: spawn disposable worker, instruct it to create + commit a probe branch, verify branch/commit visible from orchestrator, then delete the probe branch; fails → `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. NEVER fall back to inline slice work or full text-patch transfer for normal slices.
-2. No driver, no lock, no context monitoring. No handoff docs, no checkpoint, no respawn.
-3. Orchestrator output = caveman-ultra, essential only (token discipline).
+1. **Resolve shared skill root once.** Set `sharedSkillsRoot = skills/e2e-engineering` from repo root. Verify required files exist: `constitution.md`, `impl/tdd.md`, `impl/systematic-debugging.md`, `schemas/slice-result.json.md`, `schemas/review-bundle.json.md`, `schemas/review-result.json.md`, `schemas/qa-signoff.md`, and `agents/`. Missing → `<e2e-stall reason="shared-skills-missing" />` + EXIT. Runtime wrapper dirs (`.agents/skills/...`, `.claude/skills/...`) are entry points only — never probe them for shared sub-skills/schemas/constitution during execution.
+2. **Capability probe (fail-closed).** Static requirement: `spawn_agent` / `spawn_agents_on_csv`. Live probe: attempt no-op spawn (trivial exit instruction); fails → `<e2e-stall reason="fanout-unavailable" />` + EXIT. Worker-change probe: record orchestrator branch + HEAD; spawn disposable worker; instruct it to create + commit a probe branch; verify branch/commit visible from orchestrator; check whether orchestrator branch + HEAD changed; then delete only the probe branch and restore original branch. Branch/commit invisible → `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. Branch visible + checkout unchanged → **parallel Codex mode**. Branch visible + checkout changed → **Codex serial branch mode** (one impl worker at a time; no parallel ready-set dispatch). NEVER fall back to inline slice work or full text-patch transfer for normal slices.
+3. No driver, no lock, no context monitoring. No handoff docs, no checkpoint, no respawn.
+4. Orchestrator output = caveman-ultra, essential only (token discipline).
 
 ---
 
@@ -50,36 +51,38 @@ Read (offset/limit, only needed sections): `tasks/<id>/prd.json` (slice DAG) + `
 
 ## Step 3 — per-slice loop (flight IS the orchestrator)
 
-Sole writer: only orchestrator writes `prd.json` + `progress.txt` + evidence sidecars (`manifests/<story-id>/`). Sub-agents return slice result manifests ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)); never touch shared state.
+Sole writer: only orchestrator writes `prd.json` + `progress.txt` + evidence sidecars (`manifests/<story-id>/`). Sub-agents return slice result manifests (`$sharedSkillsRoot/schemas/slice-result.json.md`); never touch shared state.
 
 Repeat until DAG drained (every slice `done` or `blocked`):
 
 1. **Compute ready set** — slices whose `depends_on` are all `done` AND own `status: todo`.
-2. **Fan-out impl wave** — write ready-set manifest JSON (slice ids + injection payload), then dispatch via `spawn_agents_on_csv` (or `spawn_agent`/`wait_agent`). Codex branch-visible integration is required: each worker creates and commits to `slice/<story-id>` and returns that branch name in its slice result manifest. Parallel ONLY across disjoint file sets (same-file slices serialized by `depends_on` in to-issues). Each sub-agent injection: [constitution](../../../skills/e2e-engineering/constitution.md) + slice (acceptanceCriteria, sliceType, `integration` decision) + testCases + (brownfield) SCOPED slice of `ARCHITECTURE.md` (use §Index for offset/limit on relevant sections).
+2. **Impl dispatch wave** — write ready-set manifest JSON (slice ids + injection payload), then dispatch via `spawn_agents_on_csv` (or `spawn_agent`/`wait_agent`). Record dispatch table in memory: `agentId -> taskId, sliceId, expectedBranch, attempt`. Codex branch-visible integration is required: each worker creates and commits to `slice/<story-id>` and returns that branch name in its slice result manifest. Worker NEVER merges into the Task branch. Parallel Codex mode dispatches disjoint ready-set slices concurrently. Codex serial branch mode dispatches exactly one ready slice at a time: orchestrator creates/switches to `slice/<story-id>` from the Task branch before spawning, worker commits on the current branch without switching, orchestrator waits/validates, switches back to Task branch, then merges. Each sub-agent injection: `$sharedSkillsRoot/constitution.md` + slice (acceptanceCriteria, sliceType, `integration` decision) + testCases + (brownfield) SCOPED slice of `ARCHITECTURE.md` (use §Index for offset/limit on relevant sections).
 
    **Worktree env/config bootstrap** (included in spawn manifest). Pass cached docker env file list (from Step 2) in each sub-agent's spawn payload. Sub-agent copies into its worktree on start. Do NOT stage/commit these files — untracked only. Required file missing from main tree → sub-agent surfaces it as blocker in slice result manifest; does not silently skip.
 
-   Sub-agents run [tdd](../../../skills/e2e-engineering/impl/tdd.md). Each returns a **slice result manifest** ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)): `{ sliceId, status, summary, testsPassed, branch, findings[] }`. Chat carries manifest/evidence summaries only; code changes stay in git.
+   Sub-agents run `$sharedSkillsRoot/impl/tdd.md`. Each completes by returning a **slice result manifest** (`$sharedSkillsRoot/schemas/slice-result.json.md`): `{ sliceId, status, summary, testsPassed, branch, evidencePaths[], findings[] }`. Chat carries manifest pointers only; code changes and logs stay in git/test artifacts.
+
+   **Completion contract.** Orchestrator learns a worker finished only from the sub-agent handle (`wait_agent` completion) plus final manifest. Then validate: JSON shape, `sliceId`, `status`, expected `branch`, branch exists, branch is ahead of Task branch, and `evidencePaths[]` exist/are inspectable. Invalid/missing manifest, branch, or evidence paths → bounce/stall; never mark done from branch existence alone. Final worker message must not contain raw logs/diffs or long narrative.
 
    - **GATE 2 (hard)** — failing test before production code (inside tdd).
-   - **GATE 3 (hard)** — 3 failed fixes → re-dispatch ONCE with [systematic-debugging](../../../skills/e2e-engineering/impl/systematic-debugging.md); still red → mark slice `blocked`, keep draining.
+   - **GATE 3 (hard)** — 3 failed fixes → re-dispatch ONCE with `$sharedSkillsRoot/impl/systematic-debugging.md`; still red → mark slice `blocked`, keep draining.
    - **DO NOT do slice-impl inline.** Orchestrator writing slice production code = hard red-flag STOP.
 
-3. **Expert-review wave (artifact-driven, BEFORE merge).** Slice green → orchestrator builds **review bundle** (artifact package: diff + PRD story + [constitution](../../../skills/e2e-engineering/constitution.md) + test evidence + ARCHITECTURE slice). Dispatch reviewer agents **in parallel** via `spawn_agents_on_csv` / `spawn_agent`. In Codex, use standard `worker` agents and inject the matching canonical expert spec from `skills/e2e-engineering/agents/<role>.md` into each reviewer prompt:
+3. **Expert-review wave (artifact-driven, BEFORE merge).** Slice green → orchestrator writes manifest-first **review bundle** (`$sharedSkillsRoot/schemas/review-bundle.json.md`): branch names, base/head commits, reviewer list, changed files, `git diff --stat`, test command outcomes, and paths to logs/test cases. Do NOT load or paste full raw diffs/logs into orchestrator context; reviewers pull scoped hunks/logs themselves from the bundle. Dispatch reviewer agents via `spawn_agents_on_csv` / `spawn_agent`; parallel is preferred, bounded batches are allowed when runtime agent slots are constrained. In Codex, use standard `worker` agents and inject the matching canonical expert spec from `$sharedSkillsRoot/agents/<role>.md` into each reviewer prompt:
    - schema/db → `dba` + `backend-architect`
    - api/logic → `backend-architect` + `test-reviewer`
    - ui → `frontend-reviewer` + `backend-architect` (frontend lens)
    - every slice → `test-reviewer` (AC coverage)
 
-   Reviewer roles above are prompt roles, not Codex `agent_type` names. Reviewers receive review bundle + canonical expert spec only — NOT worktree path (Codex worktree isolation is internal; path coupling fails silently). Each returns **reviewer result** ([schema](../../../skills/e2e-engineering/schemas/review-result.json.md)): `{ reviewerId, sliceId, findings[] }`.
+   Reviewer roles above are prompt roles, not Codex `agent_type` names. Always spawn Codex expert reviewers with `agent_type: worker`; never spawn `backend-architect`, `dba`, `frontend-reviewer`, or `test-reviewer` as tool roles, even if the runtime advertises them. Reviewers receive review-bundle path/content + canonical expert spec only — NOT worktree path (Codex worktree isolation is internal; path coupling fails silently). Each returns **reviewer result** (`$sharedSkillsRoot/schemas/review-result.json.md`): `{ reviewerId, sliceId, findings[] }`.
 
-   Reviewers read-only, independent — always parallel, never serial. Findings: **Critical / Important / Minor**. Critical/Important → bounce to impl sub-agent, re-review after fix. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, keep draining. Minor → note, don't block.
+   Reviewers read-only, independent. If a reviewer spawn fails due thread/slot limits, close completed/errored agents, retry, then run bounded batches if still constrained. Give each reviewer the same review bundle and no implementation context; never skip `test-reviewer`. Findings: **Critical / Important / Minor**. Critical/Important → bounce to an impl worker for a fix commit on the slice branch, then re-review. Reviewers never fix or merge. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, keep draining. Minor → note, don't block.
 
 4. **lint + compile** — orchestrator commands (not agents). Run project lint + build/typecheck; reconcile failures before merge.
-5. **Merge** slice branch → Task branch via `git merge slice/<story-id>`. Resolve conflicts (never discard work). Branch missing or not ahead of Task branch → bounce/stall, do not ask worker to paste full patches.
+5. **Merge** slice branch → Task branch via `git merge slice/<story-id>`. Orchestrator owns this merge. Resolve conflicts (never discard work). Branch missing or not ahead of Task branch → bounce/stall, do not ask worker to paste full patches.
 6. **Record + persist sidecars** (sole writer):
-   - Write `tasks/<id>/manifests/<story-id>/slice-result.json` ([schema](../../../skills/e2e-engineering/schemas/slice-result.json.md)) from sub-agent's returned manifest.
-   - Write `tasks/<id>/manifests/<story-id>/review-result.json` ([schema](../../../skills/e2e-engineering/schemas/review-result.json.md)) from combined reviewer results (all parallel reviewers for this slice).
+   - Write `tasks/<id>/manifests/<story-id>/slice-result.json` (`$sharedSkillsRoot/schemas/slice-result.json.md`) from sub-agent's returned manifest.
+   - Write `tasks/<id>/manifests/<story-id>/review-result.json` (`$sharedSkillsRoot/schemas/review-result.json.md`) from combined reviewer results (parallel or bounded-batch reviewers for this slice).
    - Update prd.json story: `resultManifestPath`, `reviewManifestPath` (paths relative to Task root), `status: done`.
    - Append sub-agent summary to `progress.txt` (caveman-ultra, status-headed line).
    - **Status authority:** orchestrator reconciles sidecar `status` at fan-in; prd.json is sole source of truth. Never copy sidecar status blindly.
@@ -96,7 +99,7 @@ Repeat until DAG drained (every slice `done` or `blocked`):
 
 ## Step 5 — self-review (whole task)
 
-Review assembled Task against acceptanceCriteria + [constitution](../../../skills/e2e-engineering/constitution.md).
+Review assembled Task against acceptanceCriteria + `$sharedSkillsRoot/constitution.md`.
 
 - **5.1 pass** → mark Task `pending-qa` in `queue.json` + finalize `progress.txt`. Do NOT set `done` — `done` requires human approval at QA gate (ADR 0018).
 - **5.2 fail** → scoped `git restore` UNCOMMITTED leftovers ONLY (never wipe already-merged slices) + mark Task `blocked` in `queue.json` with unmet finding. Committed slices stay; finding rides to human-QA.
@@ -105,7 +108,7 @@ Review assembled Task against acceptanceCriteria + [constitution](../../../skill
 
 ## Step 6 — defer human-QA
 
-Write `tasks/<id>/qa-signoff.md` ([schema](../../../skills/e2e-engineering/schemas/qa-signoff.md), caveman-ultra): manual test cases to walk, auto-verified ACs to eyeball, staged pending amendments. Do NOT run [human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) — needs human. `/e2e-engineering` owns human review + replanning.
+Write `tasks/<id>/qa-signoff.md` (`$sharedSkillsRoot/schemas/qa-signoff.md`, caveman-ultra): manual test cases to walk, auto-verified ACs to eyeball, staged pending amendments. Do NOT run `$sharedSkillsRoot/post-impl/human-qa.md` — needs human. `/e2e-engineering` owns human review + replanning.
 
 ---
 
@@ -124,8 +127,12 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 
 ## Red flags (stop)
 - Slice-impl inline instead of sub-agent dispatch (blowup cause — Step 0 forces fan-out; inline = STOP).
+- Probing `.agents/skills/...` or `.claude/skills/...` for shared files after Step 0; use `$sharedSkillsRoot` only.
+- Continuing when `$sharedSkillsRoot` required files are missing (stall `shared-skills-missing`).
 - Fallback to inline when `spawn_agent`/`spawn_agents_on_csv` unavailable (stall + exit).
 - Fallback to text patches when worker branch commits are unavailable (stall `worker-changes-unavailable`).
+- Running multiple implementation workers when Step 0 selected Codex serial branch mode.
+- Skipping `test-reviewer` because reviewer agent slots are constrained; use bounded batches instead.
 - Re-introducing loop / checkpoint / handoff / 65% monitoring (ADR 0022 — gone).
 - Running [human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) headless (write qa-signoff.md instead).
 - `git restore` wiping already-merged slices (uncommitted only).
@@ -134,4 +141,7 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 - Re-reading docker config or codebase-map per-slice (read ONCE in Step 2).
 - Staging/committing env/config files in worktree branch (untracked only).
 - Touching another Task's `tasks/<id>/` state.
+- Loading full raw diffs/logs into orchestrator context for review; write `review-bundle.json` and let reviewers pull scoped evidence.
+- Accepting worker final messages that paste raw logs/diffs instead of returning `evidencePaths[]`.
 - Passing worktree path to reviewer agents — pass review bundle (artifact package) instead.
+- Spawning Codex named expert roles directly (`backend-architect`, `dba`, `frontend-reviewer`, `test-reviewer`) instead of `worker` + injected reviewer prompt role.

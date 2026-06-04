@@ -15,9 +15,9 @@
 | 4 | Split boundary | SKILL.md level (entry points are runtime-coupled; sub-skills are not) |
 | 5 | Shared content location | Neutral `skills/` root (repo root, not `.claude/` or `.agents/`) |
 | 6 | Fan-out model | Explicit manifest-driven orchestration — `spawn_agents_on_csv` or `spawn_agent`/`wait_agent`; manifest schema is the contract, CSV is transport detail |
-| 7 | Expert-review wave | Artifact-driven independent fan-out — reviewers receive PRD + constitution + diff + test evidence, not worktree paths; fan-out by expertise area |
+| 7 | Expert-review wave | Manifest-first independent review — reviewers receive review-bundle metadata + canonical spec, pull scoped evidence themselves, not worktree paths; fan-out by expertise area, bounded batches if Codex agent slots are constrained |
 | 8 | Expert agent definitions | Canonical specs in `skills/e2e-engineering/agents/*.md` + `agents.manifest.json`; Claude wrappers generated via `scripts/generate-agent-wrappers.ps1`; Codex uses prompt-injected `worker` agents |
-| 9 | Forcing mechanism | Static capability hint + live no-op spawn probe + Codex branch-visibility probe, fail-closed; inline slice-impl = hard STOP |
+| 9 | Forcing mechanism | Static capability hint + live no-op spawn probe + Codex worker-change probe; branch invisible stalls, checkout-mutating branch-visible workers use serial branch mode; inline slice-impl = hard STOP |
 | 10 | State files | Evidence sidecars at `manifests/<story-id>/`; `prd.json` holds DAG + status + pointers only; cross-runtime |
 | 11 | Skill registration | `AGENTS.md` tiny router for Codex; Claude Code uses SKILL.md description frontmatter (no AGENTS.md needed) |
 | 12 | Pre-impl expert consult | Inline default; manifest-driven fan-out for high-risk PRDs (schema-heavy, security, cross-service, complex UX, or user request) |
@@ -101,7 +101,7 @@ Cursor target:
 
 Tasks completed:
 1. `.agents/skills/e2e-engineering/SKILL.md` — Codex variant: capability probe section added, fan-out via `spawn_agents_on_csv`/`spawn_agent`, expert consult inline default + manifest fan-out for high-risk using prompt-injected `worker` agents, `git merge` direct (no `ExitWorktree`), reviewer roles: `backend-architect`/`dba`/`frontend-reviewer`. Paths to shared sub-skills: `../../../skills/e2e-engineering/X`.
-2. `.agents/skills/e2e-flight/SKILL.md` — Codex variant: Step 0 = static hint + no-op probe + branch-visibility probe (fail-closed), fan-out writes ready-set manifest + `spawn_agents_on_csv` or `spawn_agent` workers, workers commit to `slice/<story-id>` branches visible to orchestrator, expert-review wave artifact-driven (review bundle + canonical expert spec, NOT worktree path), reviewers: `backend-architect`/`dba`/`frontend-reviewer`/`test-reviewer`, `git merge` direct. Slice result manifest + review manifest introduced. Red flags list extended with worktree-path coupling warning.
+2. `.agents/skills/e2e-flight/SKILL.md` — Codex variant: Step 0 resolves `sharedSkillsRoot = skills/e2e-engineering` once, then static hint + no-op probe + worker-change probe (branch visible + checkout mode detection). Parallel mode requires orchestrator checkout unchanged; checkout-mutating branch-visible workers use serial branch mode. Fan-out writes ready-set manifest + `spawn_agents_on_csv` or `spawn_agent` workers, workers commit to `slice/<story-id>` branches visible to orchestrator, expert-review wave uses manifest-first review-bundle + canonical expert spec (NOT worktree path; no full raw diff/log in orchestrator), reviewers: `backend-architect`/`dba`/`frontend-reviewer`/`test-reviewer` as prompt roles on `worker`, bounded reviewer batches if agent slots are constrained, `git merge` direct by orchestrator. Slice result manifest + review manifest introduced. Red flags list extended with worktree-path coupling warning.
 3. `skills/grill-with-docs/ADR-FORMAT.md` + `CONTEXT-FORMAT.md` — moved from `.claude/skills/grill-with-docs/` (deleted there). `.claude/skills/grill-with-docs/SKILL.md` updated (2 path refs). `.agents/skills/grill-with-docs/SKILL.md` created pointing to `../../../skills/grill-with-docs/`.
 4. `AGENTS.md` — replaced standalone sequential flow (pre-Phase-2 provisional) with tiny routing block per ADR 0023 decision #9 (fail-closed, no sequential fallback).
 
@@ -131,11 +131,12 @@ Rename decision: canonical names (`frontend-reviewer`, `test-reviewer`) used eve
 
 Tasks completed:
 1. `skills/e2e-engineering/schemas/prd.json.md` — added `resultManifestPath` + `reviewManifestPath` per story; added Evidence sidecar layout section; added invariants for status authority + pointer fields.
-2. `skills/e2e-engineering/schemas/slice-result.json.md` — new: `{ sliceId, status, summary, testsPassed, branch, findings[] }`. Status-not-authoritative invariant.
-3. `skills/e2e-engineering/schemas/review-result.json.md` — new: envelope `{ sliceId, reviews: [{ reviewerId, findings[] }] }`. Individual reviewer return shape documented inline.
-4. `skills/e2e-engineering/schemas/verification-result.json.md` — new: GATE 5 schema, status:stubbed until automation lands.
-5. `.claude/skills/e2e-flight/SKILL.md` + `.agents/skills/e2e-flight/SKILL.md` — sole-writer line updated; sub-agent return type updated to slice result manifest with schema link; reviewer return type updated; Step 3.6 Record → "Record + persist sidecars" with sidecar write + prd.json pointer update + status authority note.
-6. `.claude/skills/e2e-engineering/SKILL.md` + `.agents/skills/e2e-engineering/SKILL.md` — state layout updated (added `manifests/<story-id>/`); schema list updated (3 new schemas); sole-writer rule updated; implementation loop fan-in step updated with sidecar persist + pointer write + status authority note.
+2. `skills/e2e-engineering/schemas/slice-result.json.md` — evidence-pointer-first: `{ sliceId, status, summary, testsPassed, branch, evidencePaths[], findings[] }`. Status-not-authoritative invariant.
+3. `skills/e2e-engineering/schemas/review-bundle.json.md` — new: manifest-first reviewer input sidecar; branch refs, file list, diff stat, test summaries, evidence paths.
+4. `skills/e2e-engineering/schemas/review-result.json.md` — new: envelope `{ sliceId, reviews: [{ reviewerId, findings[] }] }`. Individual reviewer return shape documented inline.
+5. `skills/e2e-engineering/schemas/verification-result.json.md` — new: GATE 5 schema, status:stubbed until automation lands.
+6. `.claude/skills/e2e-flight/SKILL.md` + `.agents/skills/e2e-flight/SKILL.md` — sole-writer line updated; sub-agent return type updated to slice result manifest with schema link; reviewer return type updated; Step 3.6 Record → "Record + persist sidecars" with sidecar write + prd.json pointer update + status authority note.
+7. `.claude/skills/e2e-engineering/SKILL.md` + `.agents/skills/e2e-engineering/SKILL.md` — state layout updated (added `manifests/<story-id>/`); schema list updated (4 new schemas); sole-writer rule updated; implementation loop fan-in step updated with sidecar persist + pointer write + status authority note.
 
 ---
 
@@ -143,9 +144,13 @@ Tasks completed:
 
 - **Sole writer** — only orchestrator writes `prd.json` + `progress.txt`. Workers return manifests; never touch shared state.
 - **Forcing mechanism is load-bearing** — if Step 0 probe is skipped or weakened in Codex SKILL.md, silent fallback to inline slice-impl causes the 22.3M-token blowup (ADR 0022 incident root cause).
-- **Codex branch-visible integration is the token-cheap path** — workers commit to `slice/<story-id>` and return manifests; orchestrator diffs/tests/merges locally. If branch visibility fails, stall instead of text-patch fallback.
+- **Codex branch-visible integration is the token-cheap path** — workers commit to `slice/<story-id>` and return manifests; orchestrator diffs/tests/merges locally. If branch visibility fails, stall instead of text-patch fallback. If checkout isolation fails but branch visibility passes, use serial branch mode.
 - **Expert review = artifact-driven, not worktree-path** — Codex worktree isolation is internal; path coupling fails silently.
+- **Review bundles are manifest-first** — orchestrator writes cheap metadata/pointers; reviewers pull scoped hunks/logs. Do not move diff/log summarization into orchestrator context.
+- **Worker results are evidence-pointer-first** — final worker chat returns compact manifest + evidence paths, never raw logs/diffs or long narrative.
+- **Reviewer slots are bounded** — close completed/errored agents promptly; if reviewer spawn hits a slot limit, retry after cleanup, then batch reviewers. Never skip `test-reviewer`.
 - **Expert adapters** — never hand-edit `.claude/agents/` after Phase 3; always regenerate from canonical specs. Codex reviewer prompts must inject those same canonical specs into standard `worker` agents.
 - **AGENTS.md is a router, not a spec** — keep it under 20 lines; no workflow content.
 - **Distribution installs the full runtime tree** — shared `skills/` must ship with `.claude/skills/` or `.agents/skills/`; AGENTS.md-only Codex installs are invalid.
+- **Resolve shared root once** — e2e-flight verifies `skills/e2e-engineering` at bootstrap and reuses it. Missing shared tree stalls `shared-skills-missing`; no repeated `.agents/...` fallback probes.
 - **Evidence sidecars cross-runtime** — Phase 4 applies to both Claude Code and Codex; it is a schema evolution, not a Codex-only fork.

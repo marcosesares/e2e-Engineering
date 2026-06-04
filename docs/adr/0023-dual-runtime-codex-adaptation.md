@@ -41,19 +41,25 @@ Codex reviewer roles             ← prompt-injected worker agents
 
 Rule: a file with no runtime primitives lives in `skills/`; a file referencing `EnterWorktree`/`Agent`/`spawn_agent`/etc. lives in the runtime-specific entry point. Sub-skills, schemas, constitution, and expert specs are shared — only the two `SKILL.md` entry points per skill are runtime-coupled.
 
+At runtime, e2e-flight resolves the shared e2e-engineering root once at bootstrap (`skills/e2e-engineering`) and reuses that path for all shared sub-skills, schemas, constitution, and canonical expert specs. Runtime entry-point directories (`.agents/skills/...`, `.claude/skills/...`) are not searched for shared files during execution. Missing shared root or required shared files is a broken install: e2e-flight emits `<e2e-stall reason="shared-skills-missing" />` and exits.
+
 ### 2. Manifest-driven fan-out (explicit orchestration)
 
-Natural-language fan-out is not used for gated implementation slices. The orchestrator owns the DAG, computes the ready set, spawns one worker per slice with disjoint ownership, and requires each worker to return a structured **slice result manifest** (`storyId`, `status`, `attempts`, `changedFiles[]`, `red`, `green`, `e2eDocPath`, `blockedReason`, `notes[]`). Sole writer writes authoritative status to `prd.json`; full evidence persists to `manifests/<story-id>/slice-result.json`.
+Natural-language fan-out is not used for gated implementation slices. The orchestrator owns the DAG, computes the ready set, spawns one worker per slice with disjoint ownership, and requires each worker to return an evidence-pointer-first **slice result manifest** (`sliceId`, `status`, one-line `summary`, `testsPassed`, `branch`, `evidencePaths[]`, `findings[]`). Worker final messages do not carry raw logs, full diffs, or long implementation narratives. Sole writer writes authoritative status to `prd.json`; evidence pointers persist to `manifests/<story-id>/slice-result.json`.
 
 The Codex transport is `spawn_agents_on_csv` if available, otherwise `spawn_agent`/`wait_agent`. JSON/NDJSON manifest is preferred over CSV for nested fields (acceptanceCriteria, testCases, gate evidence). CSV is a transport detail — the manifest schema is the contract.
 
 Natural-language fan-out weakens worktree isolation, result collection, sole-writer state updates, and bounce-ceiling enforcement. It may be used for low-risk exploratory work but is never the default for implementation slices.
 
-Codex implementation workers use **branch-visible integration** when the runtime proves it is available: the orchestrator instructs each worker to create and commit to `slice/<story-id>`, the worker returns only the branch name plus slice result manifest, and the orchestrator validates/diffs/tests/merges that branch locally. This is the preferred token path because code changes stay in git instead of crossing the chat boundary as patches. Step 0 probes this capability with a disposable branch commit; if the branch or commit is not visible from the orchestrator, e2e-flight emits `<e2e-stall reason="worker-changes-unavailable" />` and exits. Text patch payloads are not the full-fidelity fallback.
+Codex implementation workers use **branch-visible integration** when the runtime proves it is available: the orchestrator instructs each worker to create and commit to `slice/<story-id>`, the worker returns only the branch name plus slice result manifest, and the orchestrator validates/diffs/tests/merges that branch locally. This is the preferred token path because code changes stay in git instead of crossing the chat boundary as patches. Step 0 probes this capability with a disposable branch commit; if the branch or commit is not visible from the orchestrator, e2e-flight emits `<e2e-stall reason="worker-changes-unavailable" />` and exits. The same probe also verifies **worker checkout isolation**: if the orchestrator's branch and HEAD remain unchanged after the worker exits, Codex may run parallel ready-set workers; if the worker mutates the orchestrator checkout but the branch commit is visible, e2e-flight enters **Codex serial branch mode**. Text patch payloads are not the full-fidelity fallback.
+
+Codex serial branch mode preserves worker token isolation without pretending checkout-mutating workers are parallel-safe. The orchestrator dispatches exactly one implementation worker at a time, creates/switches to the slice branch before spawning, requires the worker to commit on the current branch without switching or merging, waits for the manifest, validates, switches back to the Task branch, and merges. Reviewers remain artifact-driven/read-only workers.
 
 ### 3. Artifact-driven expert-review wave
 
-Expert reviewers receive artifacts — not worktree paths. Input to each reviewer: PRD, constitution, relevant test-case docs, slice IDs, changed file list, diff/patch summary, test output evidence, applicable expert spec. Reviewers are read-only by contract; each returns a **review manifest** (`reviewerRole`, `sliceIds[]`, `findings[]` with severity/file/location/issue/rationale/suggestedFix/blocking). Fan-out is by expertise area, not necessarily one reviewer per implementation slice — catches cross-slice integration issues. In Codex, the orchestrator spawns generic `worker` agents and injects the canonical expert spec into each prompt/review bundle; named Codex role wrappers are not required.
+Expert reviewers receive artifacts — not worktree paths. The input is manifest-first: the orchestrator writes `review-bundle.json` with branch names, base/head commits, reviewer list, changed file list, `git diff --stat`, test command outcomes, and paths to full logs/test cases. The orchestrator does not load or summarize full raw diffs/logs; reviewer workers pull scoped hunks/logs themselves from git and sidecar paths. Reviewers are read-only by contract; each returns a **review manifest** (`reviewerRole`, `sliceIds[]`, `findings[]` with severity/file/location/issue/rationale/suggestedFix/blocking). Fan-out is by expertise area, not necessarily one reviewer per implementation slice — catches cross-slice integration issues. In Codex, the orchestrator spawns generic `worker` agents and injects the canonical expert spec into each prompt/review bundle; named Codex role wrappers are not required.
+
+Codex reviewer dispatch uses bounded concurrency when runtime agent slots are constrained. The orchestrator closes completed/errored implementation and review agents as soon as their manifests are validated, retries failed reviewer spawns once, then runs reviewers in bounded batches if slots remain constrained. Batching does not weaken reviewer independence: every reviewer receives the same artifact bundle and no implementation-thread context. The `test-reviewer` role is mandatory for every slice and is never skipped due slot pressure.
 
 Worktree-path input was rejected because Codex manages worktree isolation internally; coupling reviewers to a specific worktree path creates a runtime dependency that can fail silently and makes the review contract harder to port.
 
@@ -65,9 +71,9 @@ Step 0 of Codex e2e-flight runs a two-step capability handshake before any slice
 
 1. Static capability hint — use tool-discovery primitive if available in the runtime (not sufficient alone).
 2. Live no-op probe — spawn a trivial worker, wait for `{"status":"ok","capability":"fanout-probe"}`, close the worker; short timeout.
-3. Branch-visibility probe — spawn a trivial worker that creates a disposable branch + commit, verify the branch and commit are visible to the orchestrator, then delete the probe branch.
+3. Worker-change probe — record orchestrator branch + HEAD, spawn a trivial worker that creates a disposable branch + commit, verify the branch and commit are visible to the orchestrator, record whether orchestrator branch + HEAD changed, then restore original branch and delete only the probe branch.
 
-Any failure in steps 1-2: `<e2e-stall reason="fanout-unavailable" />` + EXIT. Failure in step 3: `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. Inline slice-impl remains a hard STOP. Text-patch fallback for implementation slices is rejected because it moves large diffs through the conversation and breaks the token model. The skill trigger declares sub-agent usage explicitly so runtimes requiring user authorization can prompt before Step 0 runs.
+Before the capability handshake, e2e-flight resolves `skills/e2e-engineering` once and verifies required shared files. Missing shared files: `<e2e-stall reason="shared-skills-missing" />` + EXIT. Any failure in steps 1-2: `<e2e-stall reason="fanout-unavailable" />` + EXIT. Branch/commit invisibility in step 3: `<e2e-stall reason="worker-changes-unavailable" />` + EXIT. Branch visible + checkout unchanged in step 3: parallel Codex mode. Branch visible + checkout changed in step 3: Codex serial branch mode. Inline slice-impl remains a hard STOP. Text-patch fallback for implementation slices is rejected because it moves large diffs through the conversation and breaks the token model. The skill trigger declares sub-agent usage explicitly so runtimes requiring user authorization can prompt before Step 0 runs.
 
 A static-only check proves configuration, not runtime. The live probe is the gate.
 
@@ -83,6 +89,7 @@ A static-only check proves configuration, not runtime. The live probe is the gat
   manifests/
     <story-id>/
       slice-result.json
+      review-bundle.json
       review-result.json
       verification-result.json
 ```
@@ -138,9 +145,10 @@ Layout and adapter changes are kept in separate phases. Each phase leaves at lea
 - **Codex-only migration** — rejected: Claude Code is the validated primary runtime; abandoning it before Codex parity would leave no working runtime during migration and discard all existing validation.
 - **Natural-language fan-out as primary Codex path** — rejected: weakens sole-writer guarantee, bounce-ceiling enforcement, and gate evidence collection. The workflow depends on auditability — PRD state, slice status, RED/GREEN evidence, blocked reasons.
 - **Worktree-path-driven expert reviewers** — rejected: Codex manages worktrees internally; worktree path exposure is implementation-dependent and creates a runtime coupling that can fail silently.
-- **Patch-payload integration for Codex slices** — rejected as the full-fidelity default: it is token-expensive, scales poorly with real code changes, and makes review/merge evidence harder to audit than git refs. If branch-visible worker commits are unavailable, the run stalls instead.
+- **Patch-payload integration for Codex slices** — rejected as the full-fidelity default: it is token-expensive, scales poorly with real code changes, and makes review/merge evidence harder to audit than git refs. If branch-visible worker commits are unavailable, the run stalls instead. If branch-visible commits mutate the orchestrator checkout, serial branch mode is the explicit degraded path.
 - **Hand-maintained dual agent definition files** — rejected: maintaining `.claude/agents/*.md` and separate Codex role files by hand will drift. Claude wrappers are generated from the canonical specs; Codex roles are prompt-injected from the same specs.
 - **AGENTS.md-only Codex install** — rejected: `AGENTS.md` is only a router. Without `.agents/skills/` and the shared `skills/` root, the routed skill files and their linked schemas/sub-skills are missing.
+- **Opportunistic shared-file path probing** — rejected: trying `.agents/skills/...` then `skills/...` during execution wastes calls and hides broken installs. Resolve shared root once at bootstrap; stall if missing.
 - **Silent cleanup of deprecated install files** — rejected: stale files can confuse readers, but deleting user-visible files without `--force` is too surprising. Warn by default; delete only explicit known renames with `--force`.
 - **Big-bang migration** — rejected: path breakage, wrapper drift, and state-schema regressions all land at once; incremental phases isolate failure modes.
 
@@ -148,7 +156,7 @@ Layout and adapter changes are kept in separate phases. Each phase leaves at lea
 
 - Sub-skills, schemas, constitution, and expert specs become runtime-agnostic — any future runtime target only needs new entry-point SKILL.md files, not content duplication.
 - The forcing mechanism (Step 0 live probe) is load-bearing in Codex as it is in Claude Code — if the probe is skipped or weakened, silent fallback to inline slice-impl will cause the same token blowup as the ADR 0022 incident.
-- Codex full-fidelity implementation depends on branch-visible worker commits. This runtime has been verified to expose worker-created branches to the orchestrator; future runtimes must pass the same probe before slice work begins.
+- Codex full-fidelity parallel implementation depends on branch-visible worker commits plus worker checkout isolation. A runtime that exposes worker-created branches but moves the orchestrator checkout uses Codex serial branch mode: still worker-dispatched, but no intra-Task implementation parallelism.
 - Evidence sidecars improve auditability across both runtimes but add a new artifact type to the state schema; consumers of `prd.json` must not assume gate evidence is inline.
 - Generated Claude agent wrapper files must be regenerated whenever canonical specs change — a CI check or pre-commit hook on `skills/e2e-engineering/agents/` is advisable. Codex entry points must inject the same canonical specs into `worker` prompts.
 - Release/build tooling must copy shared `skills/` plus the runtime entry-point tree for each target. Any installed wrapper pointing to `../../../skills/...` must have a matching repo-root `skills/` tree.
