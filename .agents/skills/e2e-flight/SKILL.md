@@ -28,8 +28,12 @@ Sibling to [/e2e-engineering](../e2e-engineering/SKILL.md). Headless implementat
 Read `.e2e-engineering/queue.json` (offset/limit — only what you need).
 
 - User named Task → take it.
-- Else pick: `status:todo` AND every `dependsOn` in {done, pending-qa}, highest priority first. Flip to `in-progress`.
+- Else pick: `status:todo` AND every `dependsOn` in {done, pending-qa}, highest priority first.
 - No pickable Task → `<e2e-complete />` + EXIT.
+
+**Master-clean check.** `git status` on master — any uncommitted changes → `<e2e-stall reason="master-dirty — commit or clean before flight" />` + EXIT.
+
+**Task lock + branch.** Commit `queue.json` status `todo→in-progress` to master. Then `git checkout -b task/<id>` from master. Orchestrator works on `task/<id>` throughout. Sub-agents work in isolated branches. Master not touched again until Step 5.1.
 
 Task root: `.e2e-engineering/tasks/<id>/`.
 
@@ -45,7 +49,7 @@ Read (offset/limit, only needed sections): `tasks/<id>/prd.json` (slice DAG) + `
 
 **Docker env cache (brownfield/docker projects).** Read `docker-compose.yml` (+ `docker-compose.override.yml` if present) ONCE. Extract required env/config files: `env_file` entries + volume-mounted config paths. Cache this list — included in every sub-agent spawn manifest in Step 3. Do NOT re-read per slice.
 
-**Codebase-map read (brownfield only).** If `tasks/<id>/codebase-map.md` exists, read §1–§3 ONCE here (use §Index at top of file for offset/limit). Hold in orchestrator context. Do NOT re-read in Steps 3 or 4.
+**Codebase-map (brownfield only).** Missing `tasks/<id>/codebase-map.md` → `<e2e-stall reason="codebase-map-missing — pre-impl incomplete, run /e2e-engineering" />` + EXIT. Do NOT cold-read source files to compensate. If present: read §1–§3 ONCE (§Index for offset/limit). Hold in context. Do NOT re-read in Steps 3 or 4.
 
 ---
 
@@ -76,7 +80,16 @@ Repeat until DAG drained (every slice `done` or `blocked`):
 
    Reviewer roles above are prompt roles, not Codex `agent_type` names. Always spawn Codex expert reviewers with `agent_type: worker`; never spawn `backend-architect`, `dba`, `frontend-reviewer`, or `test-reviewer` as tool roles, even if the runtime advertises them. Reviewers receive review-bundle path/content + canonical expert spec only — NOT worktree path (Codex worktree isolation is internal; path coupling fails silently). Each returns **reviewer result** (`$sharedSkillsRoot/schemas/review-result.json.md`): `{ reviewerId, sliceId, findings[] }`.
 
-   Reviewers read-only, independent. If a reviewer spawn fails due thread/slot limits, close completed/errored agents, retry, then run bounded batches if still constrained. Give each reviewer the same review bundle and no implementation context; never skip `test-reviewer`. Findings: **Critical / Important / Minor**. Critical/Important → bounce to an impl worker for a fix commit on the slice branch, then re-review. Reviewers never fix or merge. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, keep draining. Minor → note, don't block.
+   **Reviewer context injection.** Before dispatching, read method signatures (not bodies) of existing test files touched by this slice. Include as `existingTests[]` in the review bundle. Reviewers must cite a specific line/test proving a coverage gap before assigning Critical — orchestrator rejects un-evidenced Criticals without bounce.
+
+   Reviewers read-only, independent. If a reviewer spawn fails due thread/slot limits, close completed/errored agents, retry, then run bounded batches if still constrained. Give each reviewer the same review bundle + `existingTests[]` and no implementation context; never skip `test-reviewer`. Findings: **Critical / Important / Minor**.
+
+   **Three-tier bounce.** On Critical/Important finding requiring a fix:
+   - **Mechanical** (rename/reformat/comment only — zero logic lines changed, verifiable by diff) → impl worker fixes; orchestrator logs `"skip re-review: mechanical, diff confirms no logic change"`. No re-review dispatched.
+   - **Limited** (non-mechanical, no logic change) → re-dispatch triggering reviewer only.
+   - **Logic change** → full re-review wave.
+
+   Reviewers never fix or merge. **Bounce cap = 3 round-trips** → still failing → mark slice `blocked`, keep draining. Minor → note, don't block.
 
 4. **lint + compile** — orchestrator commands (not agents). Run project lint + build/typecheck; reconcile failures before merge.
 5. **Merge** slice branch → Task branch via `git merge slice/<story-id>`. Orchestrator owns this merge. Resolve conflicts (never discard work). Branch missing or not ahead of Task branch → bounce/stall, do not ask worker to paste full patches.
@@ -101,7 +114,7 @@ Repeat until DAG drained (every slice `done` or `blocked`):
 
 Review assembled Task against acceptanceCriteria + `$sharedSkillsRoot/constitution.md`.
 
-- **5.1 pass** → mark Task `pending-qa` in `queue.json` + finalize `progress.txt`. Do NOT set `done` — `done` requires human approval at QA gate (ADR 0018).
+- **5.1 pass** → on `task/<id>` branch: finalize `progress.txt`. Then `git checkout master`, commit `queue.json` status `in-progress→pending-qa`, `git checkout task/<id>`. Do NOT set `done` — `done` requires human approval at QA gate (ADR 0018).
 - **5.2 fail** → scoped `git restore` UNCOMMITTED leftovers ONLY (never wipe already-merged slices) + mark Task `blocked` in `queue.json` with unmet finding. Committed slices stay; finding rides to human-QA.
 
 ---
@@ -141,6 +154,10 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 - Re-reading docker config or codebase-map per-slice (read ONCE in Step 2).
 - Staging/committing env/config files in worktree branch (untracked only).
 - Touching another Task's `tasks/<id>/` state.
+- git stash during flight — no stash ever; master artifacts committed at clean boundaries only.
+- Touching master after task branch created, except the two targeted `queue.json` commits (Step 1 lock + Step 5.1 pending-qa).
+- Cold-reading source files when `codebase-map.md` missing (stall instead — Step 2).
+- Dispatching full re-review wave for mechanical fixes (skip re-review per [[Three-tier bounce]]).
 - Loading full raw diffs/logs into orchestrator context for review; write `review-bundle.json` and let reviewers pull scoped evidence.
 - Accepting worker final messages that paste raw logs/diffs instead of returning `evidencePaths[]`.
 - Passing worktree path to reviewer agents — pass review bundle (artifact package) instead.

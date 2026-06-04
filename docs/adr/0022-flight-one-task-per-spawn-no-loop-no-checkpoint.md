@@ -27,3 +27,18 @@ The previous design (ADR 0015) put an external AFK driver loop around the skill 
 - With loop + checkpoint + driver-brake all gone, the **only** thing preventing another runaway is fan-out firing + the inline-impl STOP. The forcing mechanism is load-bearing; if `Agent`/`EnterWorktree` cannot be loaded, the worker must stall+exit, never grind inline.
 - Verification rigor is temporarily lower (gates 4/5 stubbed) — the human-QA checklist is the real net until E2E automation lands.
 - Glossary churn: `Checkpoint`, `Unconditional gate reset`, `Phase transition`, `AFK wrapper`, `Loop driver`, `E2E_DRIVER guard` are removed/deprecated; `Fan-out`, `Sole writer`, `Hard gate` reshaped. CONTEXT.md + AGENTS.md updated alongside.
+
+---
+
+## Amendment — branch model + task lock (2026-06-04)
+
+**Root cause:** `course-validation-error-messages` flight used git stash to swap between master and task branch for artifact commits; stash-pop landed on wrong branch, requiring manual re-apply.
+
+**Decision:** Orchestrator works on `task/<id>` branch throughout flight. Master receives exactly two targeted `queue.json` commits at clean boundaries:
+
+1. `todo→in-progress` before branching (Step 1 — task lock). Pre-condition: master must be clean — uncommitted changes → `<e2e-stall reason="master-dirty">` + EXIT.
+2. `in-progress→pending-qa` after Step 5.1 self-review pass (working tree clean at this point; no stash needed).
+
+No stash, no mid-flight master commits, no arbitrary branch switching. Sub-agents work in isolated worktrees off the task branch.
+
+**Considered:** committing all artifacts to task branch only (master never updated until QA merge) — rejected because next flight reads master's `queue.json` and needs to see `in-progress` as the task lock to avoid double-pick.
