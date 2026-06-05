@@ -97,6 +97,14 @@ function main() {
 
   syncDir(CLAUDE_AGENTS_SRC, path.join(PLUGIN_DIR, "agents"));
 
+  // Cursor rule artifact
+  const CURSOR_SRC = path.join(REPO, ".cursor", "rules", "e2e-engineering.mdc");
+  const CURSOR_DST = path.join(DIST, "cursor", ".cursor", "rules", "e2e-engineering.mdc");
+  assertExists(CURSOR_SRC, ".cursor/rules/e2e-engineering.mdc");
+  fs.mkdirSync(path.dirname(CURSOR_DST), { recursive: true });
+  fs.copyFileSync(CURSOR_SRC, CURSOR_DST);
+  process.stdout.write("build-dist: copied .cursor/rules/e2e-engineering.mdc → dist/cursor/.cursor/rules/e2e-engineering.mdc\n");
+
   // sanity: required portable artifacts present
   const required = [
     path.join(REPO, "dist", "marketplace", ".claude-plugin", "marketplace.json"),
