@@ -83,6 +83,20 @@ function main() {
     );
   }
 
+  // Marketplace JSON manifests — copy from source .claude-plugin/
+  const MARKETPLACE_META_SRC = path.join(REPO, ".claude-plugin");
+  assertExists(path.join(MARKETPLACE_META_SRC, "marketplace.json"), ".claude-plugin/marketplace.json");
+  assertExists(path.join(MARKETPLACE_META_SRC, "plugin.json"), ".claude-plugin/plugin.json");
+  const MARKETPLACE_META_DST = path.join(REPO, "dist", "marketplace", ".claude-plugin");
+  fs.mkdirSync(MARKETPLACE_META_DST, { recursive: true });
+  fs.copyFileSync(path.join(MARKETPLACE_META_SRC, "marketplace.json"), path.join(MARKETPLACE_META_DST, "marketplace.json"));
+  const PLUGIN_META_DST = path.join(PLUGIN_DIR, ".claude-plugin");
+  fs.mkdirSync(PLUGIN_META_DST, { recursive: true });
+  fs.copyFileSync(path.join(MARKETPLACE_META_SRC, "plugin.json"), path.join(PLUGIN_META_DST, "plugin.json"));
+  process.stdout.write("build-dist: copied marketplace manifests → dist/marketplace\n");
+
+  syncDir(CLAUDE_AGENTS_SRC, path.join(PLUGIN_DIR, "agents"));
+
   // sanity: required portable artifacts present
   const required = [
     path.join(REPO, "dist", "marketplace", ".claude-plugin", "marketplace.json"),
@@ -98,8 +112,6 @@ function main() {
     process.stderr.write("build-dist: WARNING — missing portable artifacts:\n");
     for (const m of missing) process.stderr.write("  " + path.relative(REPO, m) + "\n");
   }
-
-  syncDir(CLAUDE_AGENTS_SRC, path.join(PLUGIN_DIR, "agents"));
 
   const count = countFiles(PLUGIN_SKILLS_ROOT);
   process.stdout.write("build-dist: synced " + count + " marketplace entry file(s) [" + TOP_LEVEL_SKILLS.join(", ") + "] → " + path.relative(REPO, PLUGIN_SKILLS_ROOT) + "\n");

@@ -5,11 +5,12 @@
 .DESCRIPTION
   Pipeline:
     1. Decide the SemVer bump (auto, or -Bump override).
-    2. Set the new version in all three manifests:
+    2. Set the new version in all three SOURCE manifests:
          package.json
-         dist/marketplace/.claude-plugin/marketplace.json        (metadata.version)
-         dist/marketplace/plugins/e2e-engineering/.claude-plugin/plugin.json
-    3. npm run build        (scripts/build-dist.js — syncs skills + agents into dist/)
+         .claude-plugin/marketplace.json        (metadata.version)
+         .claude-plugin/plugin.json
+    3. npm run build        (scripts/build-dist.js — syncs skills + agents into dist/,
+                             copies stamped .claude-plugin/ manifests to dist/)
     4. npm run validate     (links, role names, generated dist freshness, JSON manifests)
     5. git commit + tag v<version>   (unless -NoGit)
     6. npm publish --access public
@@ -51,12 +52,15 @@ function Run([string]$exe, [string[]]$argv) {
     if ($LASTEXITCODE -ne 0) { throw "$exe exited $LASTEXITCODE" }
 }
 
+Step "Generate agent wrappers (generate-agent-wrappers.ps1)"
+Run "pwsh" @("-File", (Join-Path $repo "skills\e2e-engineering\scripts\generate-agent-wrappers.ps1"))
+
 $pkgPath = Join-Path $repo "package.json"
-$mktPath = Join-Path $repo "dist/marketplace/.claude-plugin/marketplace.json"
-$plgPath = Join-Path $repo "dist/marketplace/plugins/e2e-engineering/.claude-plugin/plugin.json"
+$mktPath = Join-Path $repo ".claude-plugin/marketplace.json"
+$plgPath = Join-Path $repo ".claude-plugin/plugin.json"
 $manifestPaths = @($pkgPath, $mktPath, $plgPath)
 foreach ($p in $manifestPaths) {
-    if (-not (Test-Path $p)) { throw "manifest missing: $p (run npm run build first)" }
+    if (-not (Test-Path $p)) { throw "source manifest missing: $p" }
 }
 $originalManifestText = @{}
 foreach ($p in $manifestPaths) {
@@ -124,13 +128,12 @@ function Set-JsonVersion([string]$path, [string]$version) {
     if ($new -ne $raw) { Set-Content -Path $path -Value $new -NoNewline -Encoding utf8 }
     Write-Host "  set $version → $([System.IO.Path]::GetFileName($path))"
 }
-Step "Stamp manifests"
+Step "Stamp source manifests"
 Set-JsonVersion $pkgPath $newVersion
 Set-JsonVersion $plgPath $newVersion
 Set-JsonVersion $mktPath $newVersion
 
-# --- build ---
-Step "Build (npm run build)"
+Step "Build (npm run build — copies stamped manifests to dist)"
 Run "npm" @("run", "build")
 
 Step "Validate (npm run validate)"
