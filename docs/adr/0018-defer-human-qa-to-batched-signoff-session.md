@@ -1,5 +1,7 @@
 # Defer human-QA to a batched sign-off session
 
+> **AMENDED by ADR 0024 (Fork Y).** Gate-5's automatable half loses `/run` + `/verify` (no agent live-UI exercise); it keeps full-suite-green (unit+API) + AC-checklist-vs-code. UI is verified by the human-QA Manual walk only.
+
 Hard gate 5 ends with human-QA — a manual test-case walk plus sign-off, the single human-approval chokepoint. In a headless flight draining several Tasks (ADR 0015/0016), that gate stops the loop: flight reaches Task 1's human-QA and cannot proceed without a human, defeating the walk-away promise three times over for a three-Task batch.
 
 We defer human-QA out of the per-Task flow and batch it at the end (the "park the human judgment" pattern this codebase already uses for constitution amendments at task close, ADR 0014 lineage). Flight runs everything automatable per Task — gate 4 (E2E green), the automatable half of gate 5 (full suite, `/run` + `/verify` live exercise, auto-ticked acceptance criteria), and the post-impl review — then writes a per-Task **[[qa-signoff.md]]** checklist and sets the Task to a new **[[pending-qa]]** status instead of `done`. Flight continues to the next Task. `<e2e-complete>` fires when no selected Task remains `todo`/`in-progress`.

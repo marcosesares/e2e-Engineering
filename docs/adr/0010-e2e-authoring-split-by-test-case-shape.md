@@ -1,5 +1,7 @@
 # E2E tests authored by test-case shape: feature in-slice, regression in a final pass
 
+> **AMENDED by ADR 0024 (Fork Y).** Applies to API/integration only. UI E2E is not automated — UI test cases are disposition Manual (human-QA walk). Per-call API red-green (Playwright `request`) replaces the in-slice executable UI layer; the regression-final-pass for UI is dropped.
+
 Test cases (`.md`) are authored upfront from the PRD's testing decisions, and to-issues attaches their ids to each story (`testCases[]`). Their automation into executable E2E splits along the feature/regression shape distinction already in the model. Feature test-cases (story-level journeys) are automated by the slice subagent as part of its red-green-refactor — incremental, parallel, and keeping orchestrator context lean. Regression test-cases (app-wide journeys spanning multiple stories) are automated by a single final e2e-loop pass after fan-in, because only at that point does the whole feature exist for a cross-slice journey to be written. Hard gate 4 runs the full accumulated suite; a test-case's disposition is Automated if an E2E exists for it, else Manual (the Manual set becomes the post-impl human-QA script).
 
 Rejected: all-E2E-in-slice (a single slice subagent cannot author journeys spanning stories it did not build, so cross-feature regression coverage is missed) and all-E2E-in-a-final-pass (late feedback plus a large serial authoring step that defeats the lean-context benefit of the parallel subagent model).
