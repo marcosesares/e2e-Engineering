@@ -63,6 +63,26 @@ function main() {
   syncSkillDirs(CLAUDE_SKILLS_SRC, path.join(DIST, "claude", "skills"), TOP_LEVEL_SKILLS, "Claude skills");
   syncDir(CLAUDE_AGENTS_SRC, path.join(DIST, "claude", "agents"));
   syncSkillDirs(CODEX_SKILLS_SRC, path.join(DIST, "codex", ".agents", "skills"), TOP_LEVEL_SKILLS, "Codex skills");
+
+  // Embed shared sub-skills inside Codex skill dirs.
+  // Codex resolves markdown links relative to the skill dir and does not traverse ../,
+  // so sub-skills must live alongside the SKILL.md entry point.
+  const CODEX_DIST_SKILLS = path.join(DIST, "codex", ".agents", "skills");
+  copyDir(path.join(SHARED_SKILLS_SRC, "e2e-engineering"), path.join(CODEX_DIST_SKILLS, "e2e-engineering"));
+  copyDir(path.join(SHARED_SKILLS_SRC, "grill-with-docs"), path.join(CODEX_DIST_SKILLS, "grill-with-docs"));
+
+  // Rewrite ../../../skills/X/ path prefixes in Codex SKILL.md files to local-relative paths.
+  const codexSkillRewrites = [
+    { skill: "e2e-engineering", replacements: [["../../../skills/e2e-engineering/", ""]] },
+    { skill: "e2e-flight",       replacements: [["../../../skills/e2e-engineering/", "../e2e-engineering/"]] },
+    { skill: "grill-with-docs",  replacements: [["../../../skills/grill-with-docs/", ""]] },
+  ];
+  for (const { skill, replacements } of codexSkillRewrites) {
+    const skillMd = path.join(CODEX_DIST_SKILLS, skill, "SKILL.md");
+    if (fs.existsSync(skillMd)) copyFileWithReplacements(skillMd, skillMd, replacements);
+  }
+  process.stdout.write("build-dist: embedded shared sub-skills + rewrote paths in Codex entries → dist/codex/.agents/skills/\n");
+
   copyFileWithReplacements(path.join(REPO, "AGENTS.md"), path.join(DIST, "agents-md", "AGENTS.md"), []);
 
   // Claude marketplace plugin artifacts. The plugin cannot install repo-root

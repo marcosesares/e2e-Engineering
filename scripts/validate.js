@@ -153,11 +153,47 @@ function validateNoDeprecatedRoles() {
   }
 }
 
+const CODEX_SKILL_REWRITES = {
+  "e2e-engineering": [["../../../skills/e2e-engineering/", ""]],
+  "e2e-flight":       [["../../../skills/e2e-engineering/", "../e2e-engineering/"]],
+  "grill-with-docs":  [["../../../skills/grill-with-docs/", ""]],
+};
+
+function validateCodexDist() {
+  const srcRoot = path.join(REPO, ".agents/skills");
+  const dstRoot = path.join(REPO, "dist/codex/.agents/skills");
+  if (!exists(dstRoot)) return fail("Codex skills dist: missing " + rel(dstRoot));
+
+  for (const name of TOP_LEVEL_SKILLS) {
+    const src = path.join(srcRoot, name, "SKILL.md");
+    const dst = path.join(dstRoot, name, "SKILL.md");
+    if (!exists(src)) { fail("Codex skills dist " + name + ": missing source SKILL.md"); continue; }
+    if (!exists(dst)) { fail("Codex skills dist " + name + ": missing dist SKILL.md"); continue; }
+    const rewrites = CODEX_SKILL_REWRITES[name] || [];
+    let expected = read(src);
+    for (const [from, to] of rewrites) expected = expected.split(from).join(to);
+    if (read(dst) !== expected) fail("Codex skills dist: stale dist/codex/.agents/skills/" + name + "/SKILL.md");
+  }
+
+  for (const sub of ["impl", "pre-impl", "post-impl", "schemas", "standards", "agents"]) {
+    if (!exists(path.join(dstRoot, "e2e-engineering", sub)))
+      fail("Codex skills dist: missing embedded sub-dir e2e-engineering/" + sub);
+  }
+  for (const file of ["adopt.md", "constitution.md"]) {
+    if (!exists(path.join(dstRoot, "e2e-engineering", file)))
+      fail("Codex skills dist: missing embedded file e2e-engineering/" + file);
+  }
+  for (const file of ["ADR-FORMAT.md", "CONTEXT-FORMAT.md"]) {
+    if (!exists(path.join(dstRoot, "grill-with-docs", file)))
+      fail("Codex skills dist: missing embedded file grill-with-docs/" + file);
+  }
+}
+
 function validateDistFresh() {
   compareSkillDirs(path.join(REPO, "skills"), path.join(REPO, "dist/shared/skills"), SHARED_SKILLS, "shared skills dist");
   compareSkillDirs(path.join(REPO, ".claude/skills"), path.join(REPO, "dist/claude/skills"), TOP_LEVEL_SKILLS, "Claude skills dist");
   compareDirs(path.join(REPO, ".claude/agents"), path.join(REPO, "dist/claude/agents"), "Claude agents dist");
-  compareSkillDirs(path.join(REPO, ".agents/skills"), path.join(REPO, "dist/codex/.agents/skills"), TOP_LEVEL_SKILLS, "Codex skills dist");
+  validateCodexDist();
   compareFile(path.join(REPO, "AGENTS.md"), path.join(REPO, "dist/agents-md/AGENTS.md"), "AGENTS.md dist");
 
   const plugin = path.join(REPO, "dist/marketplace/plugins/e2e-engineering");
@@ -195,7 +231,9 @@ validateMarkdownLinks([
   ...TOP_LEVEL_SKILLS.flatMap((skill) => listMarkdownFiles(path.join(REPO, ".agents/skills", skill))),
   ...TOP_LEVEL_SKILLS.flatMap((skill) =>
     listMarkdownFiles(path.join(REPO, "dist/marketplace/plugins/e2e-engineering/skills", skill))
-  )
+  ),
+  // Codex dist: only SKILL.md entry points (sub-skill files contain illustrative/example links)
+  ...TOP_LEVEL_SKILLS.map((skill) => path.join(REPO, "dist/codex/.agents/skills", skill, "SKILL.md")).filter(exists),
 ]);
 validateAgentsRouter();
 validateNoDeprecatedRoles();

@@ -145,7 +145,7 @@ Emit exactly one plain status as last line: `<e2e-complete />` (no more pickable
 - Running multiple implementation workers when Step 0 selected Codex serial branch mode.
 - Skipping `test-reviewer` because reviewer agent slots are constrained; use bounded batches instead.
 - Re-introducing loop / checkpoint / handoff / 65% monitoring (ADR 0022 — gone).
-- Running [human-qa](../../../skills/e2e-engineering/post-impl/human-qa.md) headless (write qa-signoff.md instead).
+- Running [human-qa](../e2e-engineering/post-impl/human-qa.md) headless (write qa-signoff.md instead).
 - Automating UI with Playwright browser/POM, or opening the app for UI verification (Fork Y/ADR 0024 — UI is Manual → human-QA; automate unit+API only).
 - Marking Task `blocked` because gate 5 suite is red (record failures in qa-signoff.md → pending-qa instead — ADR 0025).
 - Skipping `## Gate 5 Failures` section when gate 5 had failures (human needs them to route repair Tasks).
