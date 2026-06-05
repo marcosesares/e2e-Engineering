@@ -97,13 +97,15 @@ function main() {
 
   syncDir(CLAUDE_AGENTS_SRC, path.join(PLUGIN_DIR, "agents"));
 
-  // Cursor rule artifact
-  const CURSOR_SRC = path.join(REPO, ".cursor", "rules", "e2e-engineering.mdc");
-  const CURSOR_DST = path.join(DIST, "cursor", ".cursor", "rules", "e2e-engineering.mdc");
-  assertExists(CURSOR_SRC, ".cursor/rules/e2e-engineering.mdc");
-  fs.mkdirSync(path.dirname(CURSOR_DST), { recursive: true });
-  fs.copyFileSync(CURSOR_SRC, CURSOR_DST);
-  process.stdout.write("build-dist: copied .cursor/rules/e2e-engineering.mdc → dist/cursor/.cursor/rules/e2e-engineering.mdc\n");
+  // Cursor rule artifacts
+  const CURSOR_RULES_SRC = path.join(REPO, ".cursor", "rules");
+  const CURSOR_RULES_DST = path.join(DIST, "cursor", ".cursor", "rules");
+  fs.mkdirSync(CURSOR_RULES_DST, { recursive: true });
+  for (const mdc of ["e2e-engineering.mdc", "e2e-flight.mdc"]) {
+    assertExists(path.join(CURSOR_RULES_SRC, mdc), ".cursor/rules/" + mdc);
+    fs.copyFileSync(path.join(CURSOR_RULES_SRC, mdc), path.join(CURSOR_RULES_DST, mdc));
+  }
+  process.stdout.write("build-dist: copied .cursor/rules/*.mdc → dist/cursor/.cursor/rules/\n");
 
   // sanity: required portable artifacts present
   const required = [
@@ -113,7 +115,8 @@ function main() {
     path.join(REPO, "dist", "shared", "skills"),
     path.join(REPO, "dist", "claude", "skills"),
     path.join(REPO, "dist", "codex", ".agents", "skills"),
-    path.join(REPO, "dist", "cursor", ".cursor", "rules", "e2e-engineering.mdc")
+    path.join(REPO, "dist", "cursor", ".cursor", "rules", "e2e-engineering.mdc"),
+    path.join(REPO, "dist", "cursor", ".cursor", "rules", "e2e-flight.mdc")
   ];
   const missing = required.filter((p) => !fs.existsSync(p));
   if (missing.length) {

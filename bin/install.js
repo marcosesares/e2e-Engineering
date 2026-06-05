@@ -144,11 +144,15 @@ function installAgentsMd(dest, opts, written) {
   }
 }
 
+const CURSOR_RULES = ["e2e-engineering.mdc", "e2e-flight.mdc"];
+
 function installCursor(dest, opts, written) {
   installSharedSkills(dest, opts, written);
   installCodexSkills(dest, opts, written);
-  const rule = requireDist(path.join("cursor", ".cursor", "rules", "e2e-engineering.mdc"));
-  copyRecursive(rule, path.join(dest, ".cursor", "rules", "e2e-engineering.mdc"), opts, written);
+  for (const mdc of CURSOR_RULES) {
+    const rule = requireDist(path.join("cursor", ".cursor", "rules", mdc));
+    copyRecursive(rule, path.join(dest, ".cursor", "rules", mdc), opts, written);
+  }
   // Cursor also reads AGENTS.md — install the router.
   installAgentsMd(dest, opts, written);
 }
